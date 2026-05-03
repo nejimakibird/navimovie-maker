@@ -1,0 +1,42 @@
+# Build outputs
+bin/
+obj/
+Debug/
+Release/
+publish/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# NaviMovie-Maker generated folders
+work/
+temp/
+converted/
+downloads/
+logs/
+
+# Media outputs / temporary media
+*.mp4
+*.m4v
+*.mpg
+*.mpeg
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.wma
+
+# External tools
+tools/
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe

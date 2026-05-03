@@ -1,0 +1,560 @@
+<Window x:Class="NaviMovieMaker.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="NaviMovie-Maker" Height="860" Width="1280" MinHeight="760" MinWidth="1080"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <Menu Margin="0,0,0,14">
+                <MenuItem Header="_Tools">
+                    <MenuItem x:Name="CheckExternalToolsMenuItem"
+                              Header="Check External Tools"
+                              Click="CheckExternalToolsMenuItem_Click" />
+                    <Separator />
+                    <MenuItem x:Name="SettingsMenuItem"
+                              Header="Settings"
+                              Click="SettingsMenuItem_Click" />
+                    <Separator />
+                    <MenuItem Header="Open Working Folder"
+                              Click="OpenWorkingFolderMenuItem_Click" />
+                    <MenuItem Header="Open Converted Folder"
+                              Click="OpenConvertedFolderMenuItem_Click" />
+                    <MenuItem Header="Open Temporary Folder"
+                              Click="OpenTemporaryFolderMenuItem_Click" />
+                    <MenuItem Header="Open Local Video Folder"
+                              Click="OpenLocalVideoFolderMenuItem_Click" />
+                </MenuItem>
+            </Menu>
+            <TextBlock x:Name="ExternalToolsStatusTextBlock"
+                       Text="External tools: Check required"
+                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="VideoListWorkRow" Height="*" MinHeight="150" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition x:Name="QueueWorkRow" Height="*" MinHeight="150" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition x:Name="LogWorkRow" Height="Auto" MinHeight="0" />
+            </Grid.RowDefinitions>
+
+            <Expander x:Name="CandidatesExpander"
+                      Grid.Row="0"
+                      Header="Video Source (0)"
+                      IsExpanded="True"
+                      Margin="0,0,0,8"
+                      Expanded="CandidatesExpander_Expanded"
+                      Collapsed="CandidatesExpander_Collapsed">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <GroupBox Grid.Row="0" Header="Video Source" Margin="0,0,0,10">
+                        <Grid Margin="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,10">
+                                <RadioButton x:Name="YouTubeSearchModeRadioButton"
+                                             Content="Search"
+                                             IsChecked="True"
+                                             VerticalAlignment="Center"
+                                             Checked="SourceModeRadioButton_Checked" />
+                                <RadioButton x:Name="DirectUrlModeRadioButton"
+                                             Content="Direct URL"
+                                             Margin="18,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Checked="SourceModeRadioButton_Checked" />
+                            </StackPanel>
+
+                            <Grid x:Name="DirectUrlInputGrid" Grid.Row="1" Grid.Column="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="Video URL"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,10,0" />
+                                <TextBox x:Name="UrlTextBox"
+                                         Grid.Column="1"
+                                         MinHeight="32"
+                                         VerticalContentAlignment="Center"
+                                         KeyDown="VideoSourceInputTextBox_KeyDown"
+                                         ToolTip="Paste a video, playlist, channel, or other yt-dlp-supported URL." />
+                            </Grid>
+
+                            <Grid x:Name="YouTubeSearchInputGrid" Grid.Row="1" Grid.Column="0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="Search Query"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,10,0" />
+                                <TextBox x:Name="SearchQueryTextBox"
+                                         Grid.Column="1"
+                                         MinHeight="32"
+                                         VerticalContentAlignment="Center"
+                                         KeyDown="VideoSourceInputTextBox_KeyDown"
+                                         ToolTip="Search YouTube through yt-dlp without opening a browser." />
+                                <TextBlock Grid.Column="2"
+                                           Text="Results"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,8,0" />
+                                <ComboBox x:Name="SearchResultCountComboBox"
+                                          Grid.Column="3"
+                                          MinWidth="70"
+                                          MinHeight="32"
+                                          SelectedIndex="1">
+                                    <ComboBoxItem Content="10" />
+                                    <ComboBoxItem Content="20" />
+                                    <ComboBoxItem Content="50" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Button x:Name="FetchVideoListButton"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Content="Load from URL"
+                                    MinWidth="130"
+                                    MinHeight="32"
+                                    Margin="12,0,0,0"
+                                    Click="FetchVideoListButton_Click" />
+                        </Grid>
+                    </GroupBox>
+
+                    <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                        <Button x:Name="SelectAllVideosButton"
+                                Content="Select All"
+                                MinWidth="90"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="SelectAllVideosButton_Click" />
+                        <Button x:Name="DeselectAllVideosButton"
+                                Content="Deselect All"
+                                MinWidth="100"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="DeselectAllVideosButton_Click" />
+                        <Button x:Name="InvertVideoSelectionButton"
+                                Content="Invert Selection"
+                                MinWidth="120"
+                                MinHeight="30"
+                                Margin="0,0,16,8"
+                                Visibility="Collapsed"
+                                Click="InvertVideoSelectionButton_Click" />
+                        <Button x:Name="MoveUpButton"
+                                Content="Move Up"
+                                MinWidth="90"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="MoveUpButton_Click" />
+                        <Button x:Name="MoveDownButton"
+                                Content="Move Down"
+                                MinWidth="90"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="MoveDownButton_Click" />
+                        <Button x:Name="RemoveButton"
+                                Content="Remove"
+                                MinWidth="90"
+                                MinHeight="30"
+                                Margin="0,0,16,8"
+                                Visibility="Collapsed"
+                                Click="RemoveButton_Click" />
+                        <Button x:Name="AddSelectedToQueueButton"
+                                Content="Add Selected to Queue"
+                                MinWidth="160"
+                                MinHeight="30"
+                                Margin="0,0,0,8"
+                                Click="AddSelectedToQueueButton_Click" />
+                        <Button x:Name="DownloadSelectedButton"
+                                Content="Download Selected"
+                                MinWidth="140"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="DownloadSelectedButton_Click" />
+                        <Button x:Name="CancelDownloadButton"
+                                Content="Cancel"
+                                IsEnabled="False"
+                                MinWidth="80"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Visibility="Collapsed"
+                                Click="CancelDownloadButton_Click" />
+                        <Button x:Name="ConvertDownloadedButton"
+                                Content="Convert Selected"
+                                MinWidth="150"
+                                MinHeight="30"
+                                Margin="0,0,0,8"
+                                Visibility="Collapsed"
+                                Click="ConvertDownloadedButton_Click" />
+                    </WrapPanel>
+
+                    <DataGrid x:Name="VideoListDataGrid"
+                              Grid.Row="2"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              HeadersVisibility="Column"
+                              IsReadOnly="False"
+                              SelectionMode="Extended"
+                              SelectionUnit="FullRow"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Auto">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#"
+                                                Binding="{Binding Order}"
+                                                IsReadOnly="True"
+                                                Width="50" />
+                            <DataGridTemplateColumn Header="Thumb"
+                                                    IsReadOnly="True"
+                                                    Width="136">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Padding="0"
+                                                BorderThickness="0"
+                                                Background="Transparent"
+                                                Cursor="Hand"
+                                                Focusable="False"
+                                                ToolTip="Open video in browser"
+                                                Click="CandidateThumbnailButton_Click">
+                                            <Border Width="120"
+                                                    Height="68"
+                                                    Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}"
+                                                    BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                                    BorderThickness="1"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding ThumbnailImage}"
+                                                       Stretch="UniformToFill" />
+                                            </Border>
+                                        </Button>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Title"
+                                                Binding="{Binding Title}"
+                                                IsReadOnly="True"
+                                                Width="*" />
+                            <DataGridTextColumn Header="Source"
+                                                Binding="{Binding SourceType}"
+                                                IsReadOnly="True"
+                                                Width="90" />
+                            <DataGridTextColumn Header="Duration"
+                                                Binding="{Binding DurationText}"
+                                                IsReadOnly="True"
+                                                Width="100" />
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding Status}"
+                                                IsReadOnly="True"
+                                                Width="140" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Expander>
+
+            <GridSplitter x:Name="CandidateQueueGridSplitter"
+                          Grid.Row="1"
+                          Height="6"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                          Visibility="Visible" />
+
+            <Expander x:Name="ConversionQueueExpander"
+                      Grid.Row="2"
+                      Header="Conversion Queue (0)"
+                      IsExpanded="True"
+                      Margin="0,0,0,8"
+                      AllowDrop="True"
+                      DragOver="ConversionQueue_DragOver"
+                      Drop="ConversionQueue_Drop"
+                      Expanded="ConversionQueueExpander_Expanded"
+                      Collapsed="ConversionQueueExpander_Collapsed">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                        <TextBlock Text="Run Mode"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="QueueExecutionModeComboBox"
+                                  MinWidth="150"
+                                  MinHeight="30"
+                                  Margin="0,0,12,8"
+                                  SelectedIndex="1">
+                            <ComboBoxItem Content="Download Only" />
+                            <ComboBoxItem Content="Download &amp; Convert" />
+                            <ComboBoxItem Content="Convert Only" />
+                            <ComboBoxItem Content="Copy Files" />
+                        </ComboBox>
+                        <TextBlock Text="Output Preset"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="OutputPresetComboBox"
+                                  MinWidth="260"
+                                  MinHeight="30"
+                                  Margin="0,0,12,8"
+                                  SelectionChanged="OutputPresetComboBox_SelectionChanged" />
+                        <TextBlock x:Name="AspectModeLabel"
+                                   Text="Aspect Mode"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="AspectModeComboBox"
+                                  MinWidth="210"
+                                  MinHeight="30"
+                                  Margin="0,0,12,8"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="Keep aspect ratio + padding" />
+                            <ComboBoxItem Content="Stretch to fit" />
+                        </ComboBox>
+                        <CheckBox x:Name="KeepOriginalDownloadedFilesCheckBox"
+                                  Content="Keep DL Files"
+                                  IsChecked="False"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,12,8" />
+                        <TextBlock Text="Number Prefix"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <TextBox x:Name="NumberPrefixTextBox"
+                                 Text=""
+                                 Width="64"
+                                 MinHeight="30"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,0,8"
+                                 PreviewTextInput="NumberPrefixTextBox_PreviewTextInput" />
+                    </WrapPanel>
+
+                    <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                        <CheckBox x:Name="PeakBoostCheckBox"
+                                  Content="Peak Boost"
+                                  IsChecked="False"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,12,8"
+                                  Checked="PeakBoostCheckBox_CheckedChanged"
+                                  Unchecked="PeakBoostCheckBox_CheckedChanged" />
+                        <TextBlock Text="Set Audio"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="AudioAdjustmentComboBox"
+                                  MinWidth="160"
+                                  MinHeight="30"
+                                  Margin="0,0,8,8"
+                                  SelectedIndex="0"
+                                  SelectionChanged="AudioAdjustmentComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Off" />
+                            <ComboBoxItem Content="Loudness normalize" />
+                        </ComboBox>
+                        <Button x:Name="ApplyAudioAdjustmentButton"
+                                Content="Apply to selected queue items"
+                                MinWidth="190"
+                                MinHeight="30"
+                                Margin="0,0,12,8"
+                                Click="ApplyAudioAdjustmentButton_Click" />
+                        <TextBlock x:Name="TargetPeakLabel"
+                                   Text="Target Peak"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="TargetPeakComboBox"
+                                  MinWidth="90"
+                                  MinHeight="30"
+                                  Margin="0,0,12,8"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="-1.0 dBFS" />
+                            <ComboBoxItem Content="-3.0 dBFS" />
+                            <ComboBoxItem Content="-6.0 dBFS" />
+                        </ComboBox>
+                    </WrapPanel>
+
+                    <WrapPanel Grid.Row="2" Margin="0,0,0,8">
+                        <Button x:Name="ConvertQueueButton"
+                                Content="Run Queue"
+                                MinWidth="110"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Click="ConvertQueueButton_Click" />
+                        <ProgressBar x:Name="QueueProgressBar"
+                                     Width="120"
+                                     Height="16"
+                                     Minimum="0"
+                                     Maximum="1"
+                                     Value="0"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,8,8" />
+                        <TextBlock x:Name="QueueProgressTextBlock"
+                                   Text="Ready"
+                                   MinWidth="86"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,16,8" />
+                        <Button x:Name="RetryFailedQueueButton"
+                                Content="Retry Failed"
+                                MinWidth="110"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Click="RetryFailedQueueButton_Click" />
+                        <Button x:Name="CancelQueueButton"
+                                Content="Cancel Queue"
+                                IsEnabled="False"
+                                MinWidth="110"
+                                MinHeight="30"
+                                Margin="0,0,8,8"
+                                Click="CancelQueueButton_Click" />
+                        <Button x:Name="OpenConvertedFolderButton"
+                                Content="Output Folder..."
+                                MinWidth="130"
+                                MinHeight="30"
+                                Margin="0,0,0,8"
+                                Click="OutputFolderButton_Click" />
+                    </WrapPanel>
+
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <DataGrid x:Name="ConversionQueueDataGrid"
+                                  Grid.Column="0"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  HeadersVisibility="Column"
+                                  IsReadOnly="False"
+                                  SelectionMode="Extended"
+                                  SelectionUnit="FullRow"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  AllowDrop="True"
+                                  PreviewMouseLeftButtonDown="ConversionQueueDataGrid_PreviewMouseLeftButtonDown"
+                                  MouseMove="ConversionQueueDataGrid_MouseMove"
+                                  DragOver="ConversionQueueDataGrid_DragOver"
+                                  Drop="ConversionQueueDataGrid_Drop"
+                                  Sorting="ConversionQueueDataGrid_Sorting"
+                                  KeyDown="ConversionQueueDataGrid_KeyDown">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#"
+                                                    Binding="{Binding Order}"
+                                                    IsReadOnly="True"
+                                                    Width="50" />
+                                <DataGridTextColumn Header="Source"
+                                                    Binding="{Binding SourceType}"
+                                                    IsReadOnly="True"
+                                                    Width="100" />
+                                <DataGridTextColumn Header="Title / File Name"
+                                                    Binding="{Binding Title}"
+                                                    IsReadOnly="True"
+                                                    Width="220" />
+                                <DataGridTextColumn Header="Source Path or URL"
+                                                    Binding="{Binding SourcePathOrUrl}"
+                                                    IsReadOnly="True"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Audio"
+                                                    Binding="{Binding AudioAdjustmentDisplay}"
+                                                    IsReadOnly="True"
+                                                    Width="100" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    IsReadOnly="True"
+                                                    Width="150" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                            <Button x:Name="QueueMoveUpButton"
+                                    Content="↑"
+                                    ToolTip="Move selected queue item up"
+                                    Width="64"
+                                    MinHeight="30"
+                                    Margin="0,0,0,8"
+                                    Click="QueueMoveUpButton_Click" />
+                            <Button x:Name="QueueMoveDownButton"
+                                    Content="↓"
+                                    ToolTip="Move selected queue item down"
+                                    Width="64"
+                                    MinHeight="30"
+                                    Margin="0,0,0,8"
+                                    Click="QueueMoveDownButton_Click" />
+                            <Button x:Name="QueueRemoveButton"
+                                    Content="Delete"
+                                    ToolTip="Remove selected queue rows"
+                                    Width="64"
+                                    MinHeight="30"
+                                    Margin="0,0,0,8"
+                                    Click="QueueRemoveButton_Click" />
+                            <Button x:Name="QueueClearButton"
+                                    Content="Clear"
+                                    ToolTip="Clear the whole queue"
+                                    Width="64"
+                                    MinHeight="30"
+                                    Click="QueueClearButton_Click" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Expander>
+
+            <GridSplitter x:Name="LogGridSplitter"
+                          Grid.Row="3"
+                          Height="6"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                          Visibility="Collapsed" />
+
+            <Expander x:Name="LogExpander"
+                      Grid.Row="4"
+                      Header="Log"
+                      IsExpanded="False"
+                      VerticalAlignment="Stretch"
+                      Expanded="LogExpander_Expanded"
+                      Collapsed="LogExpander_Collapsed">
+                <TextBox x:Name="LogTextBox"
+                         Margin="12"
+                         MinHeight="120"
+                         VerticalAlignment="Stretch"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         TextWrapping="NoWrap"
+                         FontFamily="Consolas" />
+            </Expander>
+        </Grid>
+    </Grid>
+</Window>
