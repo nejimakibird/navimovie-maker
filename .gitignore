@@ -11,14 +11,14 @@ publish/
 *.user
 *.suo
 
-# NaviMovie-Maker generated folders
+# Generated app folders
 work/
 temp/
 converted/
 downloads/
 logs/
 
-# Media outputs / temporary media
+# Media files
 *.mp4
 *.m4v
 *.mpg
