@@ -16,6 +16,7 @@ namespace NaviMovieMaker.App;
 
 public partial class MainWindow : Window
 {
+    private const int MaxLogEntryCount = 3000;
     private const int MaxDownloadAttempts = 3;
     private const string YtDlpInstallCommand = "winget install yt-dlp.yt-dlp";
     private const string FfmpegSearchCommand = "winget search ffmpeg";
@@ -40,6 +41,7 @@ public partial class MainWindow : Window
     private readonly VideoConversionService _videoConversionService = new();
     private readonly SettingsService _settingsService = new();
     private readonly AppLog _log = new();
+    private readonly ObservableCollection<LogEntry> _logEntries = new();
     private readonly ObservableCollection<VideoListItem> _videos = new();
     private readonly ObservableCollection<ConversionQueueItem> _conversionQueue = new();
     private readonly Dictionary<string, ImageSource?> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
@@ -63,6 +65,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _settings = _settingsService.Load(out var settingsWarning);
         _sessionOutputFolder = _settings.ConvertedFolder;
+        LogListBox.ItemsSource = _logEntries;
         VideoListDataGrid.ItemsSource = _videos;
         ConversionQueueDataGrid.ItemsSource = _conversionQueue;
         _videos.CollectionChanged += Videos_CollectionChanged;
@@ -201,7 +204,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var result = await _videoMetadataService.FetchVideoListAsync(ytDlpInput);
+            var result = await _videoMetadataService.FetchVideoListAsync(ytDlpInput, message => _log.Info(message));
             if (!result.IsSuccess)
             {
                 _log.Error($"yt-dlp failed with exit code {result.ExitCode?.ToString() ?? "unknown"}.");
@@ -218,7 +221,7 @@ public partial class MainWindow : Window
 
             RefreshOrderNumbers();
             _ = LoadCandidateThumbnailsAsync(result.Videos);
-            _log.Info($"Fetch completed. {result.Videos.Count} item(s) fetched.");
+            _log.Success($"Fetch completed. {result.Videos.Count} item(s) fetched.");
             LogProcessOutput(result.StandardError, "yt-dlp stderr");
         }
         catch (Exception ex)
@@ -503,6 +506,8 @@ public partial class MainWindow : Window
         _downloadCancellationTokenSource = new CancellationTokenSource();
         SetDownloadState(isDownloading: true);
         _log.Info($"Starting download of {selectedVideos.Count} selected item(s) to: {workingFolder}");
+        var downloadProfile = ResolveDownloadProfile("Download Only", null);
+        LogDownloadProfileSelection(downloadProfile);
 
         try
         {
@@ -529,6 +534,7 @@ public partial class MainWindow : Window
                     workingFolder,
                     downloadOrder,
                     message => _log.Info(message),
+                    downloadProfile,
                     cancellationToken: _downloadCancellationTokenSource.Token);
 
                 if (result.IsCanceled)
@@ -543,7 +549,7 @@ public partial class MainWindow : Window
                 {
                     video.DownloadedFilePath = result.DownloadedFilePath ?? string.Empty;
                     video.Status = "Downloaded";
-                    _log.Info($"Downloaded {downloadOrder:000}: {video.Title}");
+                    _log.Success($"Downloaded {downloadOrder:000}: {video.Title}");
                     if (string.IsNullOrWhiteSpace(video.DownloadedFilePath))
                     {
                         _log.Error($"Downloaded file path could not be detected for {downloadOrder:000}: {video.Title}");
@@ -665,16 +671,9 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                var outputFilePath = Path.Combine(
-                    convertedFolder,
-                    $"{video.Order:000}_{SafeFileName.Create(video.Title, video.VideoId)}.mp4");
-
-                if (File.Exists(outputFilePath))
-                {
-                    video.Status = "Skipped";
-                    _log.Info($"Skipping {video.Order:000}: converted file already exists: {outputFilePath}");
-                    continue;
-                }
+                var outputStem = $"{video.Order:000}_{SafeFileName.Create(video.Title, video.VideoId)}";
+                var outputFilePath = PathHelper.GetUniqueFilePath(convertedFolder, outputStem, ".mp4");
+                LogOutputConflictIfNeeded(convertedFolder, outputStem, ".mp4", outputFilePath);
 
                 video.Status = "Converting";
                 _log.Info($"Converting {video.Order:000}: {video.Title}");
@@ -688,7 +687,7 @@ public partial class MainWindow : Window
                 {
                     video.ConvertedFilePath = result.OutputFilePath;
                     video.Status = "Converted";
-                    _log.Info($"Converted {video.Order:000}: {video.Title}");
+                    _log.Success($"Converted {video.Order:000}: {video.Title}");
                 }
                 else
                 {
@@ -1123,6 +1122,9 @@ public partial class MainWindow : Window
         _isQueueConverting = true;
         _queueCancellationTokenSource = new CancellationTokenSource();
         var selectedPreset = GetSelectedConversionPreset();
+        var downloadProfile = RequiresDownloadProfile(executionMode)
+            ? ResolveDownloadProfile(executionMode, selectedPreset)
+            : null;
         var convertedOutputStartNumber = GetNumberPrefixStartNumber();
         _activeNumberPrefixStartNumber = convertedOutputStartNumber;
         foreach (var item in selectedItems)
@@ -1165,6 +1167,11 @@ public partial class MainWindow : Window
 
         _log.Info($"Keep original downloaded files: {KeepOriginalDownloadedFilesCheckBox.IsChecked == true}");
         _log.Info($"Number prefix: {(convertedOutputStartNumber is null ? "Off" : convertedOutputStartNumber.Value.ToString("000", CultureInfo.InvariantCulture))}");
+        if (downloadProfile is not null)
+        {
+            LogDownloadProfileSelection(downloadProfile);
+        }
+
         if (convertedOutputStartNumber is not null)
         {
             _log.Info($"Converted output start number: {convertedOutputStartNumber.Value:000}");
@@ -1211,7 +1218,7 @@ public partial class MainWindow : Window
                 switch (executionMode)
                 {
                     case "Download Only":
-                        await RunDownloadOnlyQueueItemAsync(item, outputOrder, _queueCancellationTokenSource.Token);
+                        await RunDownloadOnlyQueueItemAsync(item, outputOrder, downloadProfile!, _queueCancellationTokenSource.Token);
                         if (item.SourceType == "OnlineVideo")
                         {
                             outputOrder++;
@@ -1235,7 +1242,7 @@ public partial class MainWindow : Window
 
                         break;
                     default:
-                        await RunDownloadAndConvertQueueItemAsync(item, outputOrder, selectedPreset, _queueCancellationTokenSource.Token);
+                        await RunDownloadAndConvertQueueItemAsync(item, outputOrder, selectedPreset, downloadProfile!, _queueCancellationTokenSource.Token);
                         if (item.SourceType is "OnlineVideo" or "LocalFile")
                         {
                             outputOrder++;
@@ -1299,7 +1306,8 @@ public partial class MainWindow : Window
             var outputStem = _activeNumberPrefixStartNumber is not null
                 ? $"{outputOrder:000}_{safeTitle}"
                 : safeTitle;
-            var destinationPath = GetUniqueFilePath(outputFolder, outputStem, extension);
+            var destinationPath = PathHelper.GetUniqueFilePath(outputFolder, outputStem, extension);
+            LogOutputConflictIfNeeded(outputFolder, outputStem, extension, destinationPath);
 
             _log.Info($"Copy Files output folder: {outputFolder}");
             _log.Info($"Copy source path: {sourcePath}");
@@ -1320,6 +1328,7 @@ public partial class MainWindow : Window
     private async Task RunDownloadOnlyQueueItemAsync(
         ConversionQueueItem item,
         int outputOrder,
+        DownloadProfileOption downloadProfile,
         CancellationToken cancellationToken)
     {
         if (item.SourceType == "LocalFile")
@@ -1341,6 +1350,8 @@ public partial class MainWindow : Window
             _settings.WorkingFolder,
             outputOrder,
             addNumberPrefix: false,
+            downloadProfile: downloadProfile,
+            cleanupFailedDownloadArtifacts: false,
             cancellationToken);
         if (result.IsCanceled)
         {
@@ -1389,6 +1400,7 @@ public partial class MainWindow : Window
         ConversionQueueItem item,
         int outputOrder,
         ConversionPreset preset,
+        DownloadProfileOption downloadProfile,
         CancellationToken cancellationToken)
     {
         if (item.SourceType == "LocalFile")
@@ -1417,10 +1429,17 @@ public partial class MainWindow : Window
             downloadFolder,
             outputOrder,
             addNumberPrefix: false,
+            downloadProfile: downloadProfile,
+            cleanupFailedDownloadArtifacts: !keepOriginalDownloadedFile,
             cancellationToken);
         if (downloadResult.IsCanceled)
         {
             item.Status = "Skipped";
+            if (!keepOriginalDownloadedFile && !string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
+            {
+                DeleteTemporaryDownload(downloadResult.DownloadedFilePath);
+            }
+
             return;
         }
 
@@ -1430,6 +1449,11 @@ public partial class MainWindow : Window
             _log.Error($"Download failed for queue item {item.Order:000}: {item.Title}");
             LogProcessOutput(downloadResult.StandardError, "yt-dlp stderr");
             LogProcessOutput(downloadResult.StandardOutput, "yt-dlp stdout");
+            if (!keepOriginalDownloadedFile && !string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
+            {
+                DeleteTemporaryDownload(downloadResult.DownloadedFilePath);
+            }
+
             return;
         }
 
@@ -1441,7 +1465,7 @@ public partial class MainWindow : Window
 
         await ConvertQueueItemAsync(item, item.DownloadedFilePath, outputOrder, preset, cancellationToken);
 
-        if (item.Status == "Converted" && !keepOriginalDownloadedFile)
+        if (!keepOriginalDownloadedFile)
         {
             DeleteTemporaryDownload(item.DownloadedFilePath);
         }
@@ -1452,6 +1476,8 @@ public partial class MainWindow : Window
         string outputFolder,
         int outputOrder,
         bool addNumberPrefix,
+        DownloadProfileOption downloadProfile,
+        bool cleanupFailedDownloadArtifacts,
         CancellationToken cancellationToken)
     {
         item.Status = "Downloading";
@@ -1475,6 +1501,7 @@ public partial class MainWindow : Window
                 outputFolder,
                 outputOrder,
                 message => _log.Info(message),
+                downloadProfile,
                 addNumberPrefix,
                 cancellationToken);
 
@@ -1485,6 +1512,11 @@ public partial class MainWindow : Window
                 return lastResult;
             }
 
+            if (cleanupFailedDownloadArtifacts && !string.IsNullOrWhiteSpace(lastResult.DownloadedFilePath))
+            {
+                DeleteTemporaryDownload(lastResult.DownloadedFilePath);
+            }
+
             if (attempt >= MaxDownloadAttempts)
             {
                 break;
@@ -1492,7 +1524,7 @@ public partial class MainWindow : Window
 
             var retryDelay = DownloadRetryDelays[Math.Min(attempt - 1, DownloadRetryDelays.Length - 1)];
             _log.Error($"yt-dlp attempt {attempt}/{MaxDownloadAttempts} failed for {item.Title}. Exit code: {lastResult.ExitCode?.ToString() ?? "unknown"}.");
-            _log.Info($"Retrying {item.Title} after {retryDelay.TotalSeconds:0} second(s).");
+            _log.Warn($"Retrying {item.Title} after {retryDelay.TotalSeconds:0} second(s).");
 
             try
             {
@@ -1551,7 +1583,8 @@ public partial class MainWindow : Window
         var outputExtension = useAudioOutputPreset || !isAudioOnlyInput
             ? preset.ContainerExtension
             : ".mp4";
-        var outputFilePath = GetUniqueFilePath(outputFolder, outputStem, outputExtension);
+        var outputFilePath = PathHelper.GetUniqueFilePath(outputFolder, outputStem, outputExtension);
+        LogOutputConflictIfNeeded(outputFolder, outputStem, outputExtension, outputFilePath);
 
         item.Status = "Converting";
         _log.Info($"Converting queue item {outputOrder:000}: {item.Title}");
@@ -1662,6 +1695,31 @@ public partial class MainWindow : Window
         }
 
         return "Download & Convert";
+    }
+
+    private static bool RequiresDownloadProfile(string executionMode)
+    {
+        return executionMode is "Download Only" or "Download & Convert";
+    }
+
+    private DownloadProfileOption ResolveDownloadProfile(string executionMode, ConversionPreset? selectedPreset)
+    {
+        var configuredProfile = DownloadProfileCatalog.GetProfile(_settings.DownloadProfile);
+        return configuredProfile.Id == DownloadProfileCatalog.AutoId
+            ? DownloadProfileCatalog.ResolveAuto(executionMode, selectedPreset)
+            : configuredProfile;
+    }
+
+    private void LogDownloadProfileSelection(DownloadProfileOption resolvedProfile)
+    {
+        var configuredProfile = DownloadProfileCatalog.GetProfile(_settings.DownloadProfile);
+        _log.Info($"Download Profile: {configuredProfile.DisplayName}");
+        if (configuredProfile.Id == DownloadProfileCatalog.AutoId)
+        {
+            _log.Info($"Resolved Download Profile: {resolvedProfile.DisplayName}");
+        }
+
+        _log.Info($"yt-dlp format: {resolvedProfile.FormatExpression ?? "auto"}");
     }
 
     private ConversionPreset GetSelectedConversionPreset()
@@ -1883,19 +1941,6 @@ public partial class MainWindow : Window
         };
     }
 
-    private static string GetUniqueFilePath(string folder, string desiredStem, string extension)
-    {
-        var candidate = Path.Combine(folder, $"{desiredStem}{extension}");
-        var suffix = 2;
-        while (File.Exists(candidate))
-        {
-            candidate = Path.Combine(folder, $"{desiredStem}_{suffix}{extension}");
-            suffix++;
-        }
-
-        return candidate;
-    }
-
     private string GetConvertedOutputFolder(ConversionPreset preset)
     {
         return GetConvertedOutputFolder(GetPresetFolderName(preset));
@@ -1919,7 +1964,7 @@ public partial class MainWindow : Window
 
     private static string GetPresetFolderName(ConversionPreset preset)
     {
-        return preset.Id switch
+        var folderName = preset.Id switch
         {
             ConversionPresetCatalog.CurrentCompatibilityId => "CarNavi_MP4_Current",
             "car-navi-standard" => "CarNavi_MP4_Standard",
@@ -1937,6 +1982,17 @@ public partial class MainWindow : Window
             "audio-wma-high" or "audio-wma-medium" or "audio-wma-low" => "Audio_WMA",
             _ => SafeFileName.Create(preset.DisplayName, preset.Id).Replace(' ', '_'),
         };
+
+        return SafeFileName.Create(folderName, preset.Id).Replace(' ', '_');
+    }
+
+    private void LogOutputConflictIfNeeded(string folder, string desiredStem, string extension, string selectedPath)
+    {
+        var desiredPath = PathHelper.BuildFilePath(folder, desiredStem, extension);
+        if (!string.Equals(desiredPath, selectedPath, StringComparison.OrdinalIgnoreCase))
+        {
+            _log.Info($"Output already exists. Using: {selectedPath}");
+        }
     }
 
     private void DeleteTemporaryDownload(string downloadedFilePath)
@@ -1949,11 +2005,11 @@ public partial class MainWindow : Window
         try
         {
             File.Delete(downloadedFilePath);
-            _log.Info($"Deleted temporary file: {downloadedFilePath}");
+            _log.Success($"Deleted temporary file: {downloadedFilePath}");
         }
         catch (Exception ex)
         {
-            _log.Error($"Temporary file could not be deleted: {downloadedFilePath}. {ex.Message}");
+            _log.Warn($"Warning: failed to delete temporary file: {downloadedFilePath}. {ex.Message}");
         }
     }
 
@@ -2047,10 +2103,33 @@ public partial class MainWindow : Window
         CopyCommandToClipboard($"{YtDlpUpdateCommand}{Environment.NewLine}{FfmpegUpdateCommand}");
     }
 
-    private void OnLogEntryAdded(object? sender, string entry)
+    private void CopyAllLogsMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        LogTextBox.AppendText(entry + Environment.NewLine);
-        LogTextBox.ScrollToEnd();
+        if (_logEntries.Count == 0)
+        {
+            return;
+        }
+
+        var lines = _logEntries.Select(static entry =>
+            $"[{entry.Timestamp:HH:mm:ss}] {entry.Level.ToString().ToUpperInvariant()}: {entry.Message}");
+        Clipboard.SetText(string.Join(Environment.NewLine, lines));
+    }
+
+    private void OnLogEntryAdded(object? sender, LogEntry entry)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => OnLogEntryAdded(sender, entry));
+            return;
+        }
+
+        _logEntries.Add(entry);
+        while (_logEntries.Count > MaxLogEntryCount)
+        {
+            _logEntries.RemoveAt(0);
+        }
+
+        LogListBox.ScrollIntoView(entry);
     }
 
     private void SetFetchControlsEnabled(bool isEnabled)

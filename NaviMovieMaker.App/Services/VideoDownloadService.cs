@@ -11,6 +11,7 @@ public sealed class VideoDownloadService
         string workingFolder,
         int downloadOrder,
         Action<string> log,
+        DownloadProfileOption downloadProfile,
         bool addNumberPrefix = true,
         CancellationToken cancellationToken = default)
     {
@@ -40,8 +41,11 @@ public sealed class VideoDownloadService
             EnableRaisingEvents = true,
         };
 
+        var formatExpression = downloadProfile.FormatExpression
+            ?? DownloadProfileCatalog.GetProfile(DownloadProfileCatalog.Mp4VideoAudio720pId).FormatExpression
+            ?? "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]";
         process.StartInfo.ArgumentList.Add("-f");
-        process.StartInfo.ArgumentList.Add("bv*[height<=720]+ba/b[height<=720]");
+        process.StartInfo.ArgumentList.Add(formatExpression);
         process.StartInfo.ArgumentList.Add("--merge-output-format");
         process.StartInfo.ArgumentList.Add("mp4");
         process.StartInfo.ArgumentList.Add("--retries");
@@ -57,6 +61,10 @@ public sealed class VideoDownloadService
         process.StartInfo.ArgumentList.Add("-o");
         process.StartInfo.ArgumentList.Add(outputTemplate);
         process.StartInfo.ArgumentList.Add(videoUrl);
+        log($"Resolved yt-dlp download profile: {downloadProfile.DisplayName}");
+        log($"yt-dlp format: {formatExpression}");
+        log($"yt-dlp executable: {process.StartInfo.FileName}");
+        log($"yt-dlp command: {ProcessLogHelper.FormatCommand(process.StartInfo.FileName, process.StartInfo.ArgumentList)}");
 
         var standardOutput = new StringBuilder();
         var standardError = new StringBuilder();
@@ -86,9 +94,7 @@ public sealed class VideoDownloadService
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(outputTask, errorTask);
 
-            var downloadedFilePath = process.ExitCode == 0
-                ? FindDownloadedFilePath(standardOutput.ToString(), workingFolder, outputStem)
-                : null;
+            var downloadedFilePath = FindDownloadedFilePath(standardOutput.ToString(), workingFolder, outputStem);
 
             return new VideoDownloadResult(
                 process.ExitCode == 0,
@@ -103,7 +109,7 @@ public sealed class VideoDownloadService
             return new VideoDownloadResult(
                 false,
                 true,
-                null,
+                FindDownloadedFilePath(standardOutput.ToString(), workingFolder, outputStem),
                 standardOutput.ToString(),
                 standardError.ToString(),
                 null);
@@ -183,4 +189,5 @@ public sealed class VideoDownloadService
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
+
 }

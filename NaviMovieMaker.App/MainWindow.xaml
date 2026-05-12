@@ -3,9 +3,55 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:services="clr-namespace:NaviMovieMaker.App.Services"
         mc:Ignorable="d"
         Title="NaviMovie-Maker" Height="860" Width="1280" MinHeight="760" MinWidth="1080"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Style x:Key="LogMarkerStyle" TargetType="TextBlock">
+            <Setter Property="Text" Value="●" />
+            <Setter Property="Foreground" Value="#2563EB" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Warn}">
+                    <Setter Property="Text" Value="⚠" />
+                    <Setter Property="Foreground" Value="#D97706" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Error}">
+                    <Setter Property="Text" Value="✖" />
+                    <Setter Property="Foreground" Value="#DC2626" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Success}">
+                    <Setter Property="Text" Value="✓" />
+                    <Setter Property="Foreground" Value="#16A34A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Debug}">
+                    <Setter Property="Text" Value="·" />
+                    <Setter Property="Foreground" Value="#6B7280" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LogLevelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#1D4ED8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Warn}">
+                    <Setter Property="Foreground" Value="#B45309" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Error}">
+                    <Setter Property="Foreground" Value="#B91C1C" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Success}">
+                    <Setter Property="Foreground" Value="#15803D" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="{x:Static services:LogLevel.Debug}">
+                    <Setter Property="Foreground" Value="#6B7280" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -544,16 +590,55 @@
                       VerticalAlignment="Stretch"
                       Expanded="LogExpander_Expanded"
                       Collapsed="LogExpander_Collapsed">
-                <TextBox x:Name="LogTextBox"
+                <ListBox x:Name="LogListBox"
                          Margin="12"
                          MinHeight="120"
                          VerticalAlignment="Stretch"
-                         IsReadOnly="True"
-                         AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         TextWrapping="NoWrap"
-                         FontFamily="Consolas" />
+                         FontFamily="Consolas"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingStackPanel.IsVirtualizing="True"
+                         VirtualizingStackPanel.VirtualizationMode="Recycling">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Copy All Logs"
+                                      Click="CopyAllLogsMenuItem_Click" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type services:LogEntry}">
+                            <Grid Margin="0,1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20" />
+                                    <ColumnDefinition Width="68" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Style="{StaticResource LogMarkerStyle}" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Timestamp, StringFormat={}{0:HH:mm:ss}}"
+                                           Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                           VerticalAlignment="Top" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding Level}"
+                                           Style="{StaticResource LogLevelStyle}"
+                                           VerticalAlignment="Top" />
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding Message}"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Top" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
             </Expander>
         </Grid>
     </Grid>

@@ -34,6 +34,7 @@ public sealed class SettingsService
                 return CreateDefault();
             }
 
+            NormalizeDownloadProfile(settings);
             NormalizeVisibleOutputPresets(settings);
             return settings;
         }
@@ -74,6 +75,7 @@ public sealed class SettingsService
             ConvertedFolder = Path.Combine(baseFolder, "converted"),
             LocalVideoFolder = Path.Combine(baseFolder, "local"),
             CreateSubfolderPerOutputPreset = true,
+            DownloadProfile = DownloadProfileCatalog.AutoId,
             VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList(),
         };
     }
@@ -100,6 +102,14 @@ public sealed class SettingsService
         if (settings.VisibleOutputPresetIds.Count == 0)
         {
             settings.VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList();
+        }
+    }
+
+    private static void NormalizeDownloadProfile(AppSettings settings)
+    {
+        if (!DownloadProfileCatalog.IsKnownProfile(settings.DownloadProfile))
+        {
+            settings.DownloadProfile = DownloadProfileCatalog.AutoId;
         }
     }
 

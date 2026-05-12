@@ -82,6 +82,7 @@ Tools > Check External Tools
 
 取得された候補は Candidate リストに表示されます。  
 必要な候補を選択し、`Add Selected To Queue` で Conversion Queue に追加します。
+表示されているサムネイルをクリックする事で、対象の動画をブラウザ上で再生します。
 
 ### 2. ローカルファイルを追加する
 

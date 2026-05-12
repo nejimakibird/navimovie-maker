@@ -2,21 +2,42 @@ namespace NaviMovieMaker.App.Services;
 
 public sealed class AppLog
 {
-    public event EventHandler<string>? EntryAdded;
+    public event EventHandler<LogEntry>? EntryAdded;
 
     public void Info(string message)
     {
-        Add("INFO", message);
+        Add(LogLevel.Info, message);
+    }
+
+    public void Warn(string message)
+    {
+        Add(LogLevel.Warn, message);
     }
 
     public void Error(string message)
     {
-        Add("ERROR", message);
+        Add(LogLevel.Error, message);
     }
 
-    private void Add(string level, string message)
+    public void Success(string message)
     {
-        var entry = $"[{DateTime.Now:HH:mm:ss}] {level}: {message}";
-        EntryAdded?.Invoke(this, entry);
+        Add(LogLevel.Success, message);
+    }
+
+    public void Debug(string message)
+    {
+        Add(LogLevel.Debug, message);
+    }
+
+    private void Add(LogLevel level, string message)
+    {
+        EntryAdded?.Invoke(
+            this,
+            new LogEntry
+            {
+                Timestamp = DateTime.Now,
+                Level = level,
+                Message = message,
+            });
     }
 }

@@ -5,7 +5,10 @@ namespace NaviMovieMaker.App.Services;
 
 public sealed class VideoMetadataService
 {
-    public async Task<VideoFetchResult> FetchVideoListAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<VideoFetchResult> FetchVideoListAsync(
+        string url,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -26,6 +29,8 @@ public sealed class VideoMetadataService
             process.StartInfo.ArgumentList.Add("--dump-json");
             process.StartInfo.ArgumentList.Add(url);
 
+            log?.Invoke($"yt-dlp executable: {process.StartInfo.FileName}");
+            log?.Invoke($"yt-dlp command: {ProcessLogHelper.FormatCommand(process.StartInfo.FileName, process.StartInfo.ArgumentList)}");
             process.Start();
 
             var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);

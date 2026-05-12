@@ -23,6 +23,8 @@ public partial class SettingsWindow : Window
         ConvertedFolderTextBox.Text = Settings.ConvertedFolder;
         LocalVideoFolderTextBox.Text = Settings.LocalVideoFolder;
         CreatePresetSubfolderCheckBox.IsChecked = Settings.CreateSubfolderPerOutputPreset;
+        DownloadProfileComboBox.ItemsSource = DownloadProfileCatalog.GetProfiles();
+        DownloadProfileComboBox.SelectedValue = DownloadProfileCatalog.GetProfile(Settings.DownloadProfile).Id;
 
         HiddenPresetsListBox.ItemsSource = _hiddenPresets;
         VisiblePresetsListBox.ItemsSource = _visiblePresets;
@@ -60,6 +62,7 @@ public partial class SettingsWindow : Window
             ConvertedFolder = ConvertedFolderTextBox.Text.Trim(),
             LocalVideoFolder = LocalVideoFolderTextBox.Text.Trim(),
             CreateSubfolderPerOutputPreset = CreatePresetSubfolderCheckBox.IsChecked == true,
+            DownloadProfile = DownloadProfileComboBox.SelectedValue?.ToString() ?? DownloadProfileCatalog.AutoId,
             VisibleOutputPresetIds = _visiblePresets.Select(static preset => preset.Id).ToList(),
         };
 

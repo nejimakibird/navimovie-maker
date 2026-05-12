@@ -12,6 +12,8 @@ public sealed class AppSettings
 
     public bool CreateSubfolderPerOutputPreset { get; set; } = true;
 
+    public string DownloadProfile { get; set; } = Services.DownloadProfileCatalog.AutoId;
+
     public List<string> VisibleOutputPresetIds { get; set; } =
         Services.ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList();
 
@@ -24,6 +26,7 @@ public sealed class AppSettings
             ConvertedFolder = ConvertedFolder,
             LocalVideoFolder = LocalVideoFolder,
             CreateSubfolderPerOutputPreset = CreateSubfolderPerOutputPreset,
+            DownloadProfile = DownloadProfile,
             VisibleOutputPresetIds = VisibleOutputPresetIds.ToList(),
         };
     }
