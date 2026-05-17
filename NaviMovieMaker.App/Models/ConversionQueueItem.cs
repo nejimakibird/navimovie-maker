@@ -68,8 +68,8 @@ public sealed class ConversionQueueItem : INotifyPropertyChanged
         {
             return AudioAdjustmentMode switch
             {
-                AudioAdjustmentMode.LoudnessNormalize => "Loudnorm",
-                _ => "Off",
+                AudioAdjustmentMode.LoudnessNormalize => "音量ノーマライズ",
+                _ => "なし",
             };
         }
     }

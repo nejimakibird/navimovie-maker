@@ -136,6 +136,27 @@ Conversion Queue で Run Mode を選択します。
 ※ `Portable DVD Player MPG` は DVD-Video 形式を作成するものではなく、USB/SDなどのメディア上で再生する `.mpg` ファイルを作成するプリセットです。  
 ※ 実際の再生可否は、カーナビやプレーヤー側の対応形式に依存します。
 
+#### iPod touch などでの再生について
+
+iPod touch などの Apple 系デバイスでは、一般的に MP4 / H.264 / AAC 系のファイルが扱いやすいです。
+
+既存プリセットでは、以下が再生候補になります。
+
+| 用途 | 推奨プリセット |
+| --- | --- |
+| 動画再生 | Car Navi MP4 - Small Size |
+| 動画再生 | Car Navi MP4 - Standard |
+| 音声再生 | MP3 - High |
+| 音声再生 | MP3 - Medium |
+| 音声再生 | M4A AAC |
+| 音声のみMP4 | Audio MP4 AAC Only |
+
+`Portable DVD Player MPG` は、USB/SD再生対応DVDプレーヤー向けの `.mpg` ファイルを作成するプリセットであり、iPod touch向けではありません。
+
+実際の再生可否は、iPod touch の世代や同期・転送方法、再生アプリの仕様に依存します。  
+まずは `Car Navi MP4 - Small Size` を試し、問題なければ `Car Navi MP4 - Standard` を確認するのがおすすめです。
+
+
 ### 5. 必要に応じてオプションを設定する
 
 | オプション | 内容 |

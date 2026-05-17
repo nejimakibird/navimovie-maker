@@ -59,6 +59,7 @@ public partial class MainWindow : Window
     private bool _isDownloading;
     private bool _isConverting;
     private bool _isQueueConverting;
+    private bool _isApplyingPersistedUiOptions;
 
     public MainWindow()
     {
@@ -77,6 +78,7 @@ public partial class MainWindow : Window
         }
 
         PopulateOutputPresetComboBox();
+        ApplyPersistedUiOptions();
         UpdateDownloadButtonState();
         UpdateConvertButtonState();
         UpdateConvertQueueButtonState();
@@ -137,6 +139,7 @@ public partial class MainWindow : Window
         _settings = settingsWindow.Settings;
         _sessionOutputFolder = _settings.ConvertedFolder;
         PopulateOutputPresetComboBox();
+        SavePersistedUiOptions();
         UpdateDownloadButtonState();
         UpdateConvertButtonState();
         UpdateConvertQueueButtonState();
@@ -146,22 +149,27 @@ public partial class MainWindow : Window
 
     private void OpenWorkingFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        OpenConfiguredFolder(_settings.WorkingFolder, "Working Folder");
+        OpenConfiguredFolder(_settings.WorkingFolder, "作業フォルダ");
     }
 
     private void OpenConvertedFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        OpenConfiguredFolder(_settings.ConvertedFolder, "Converted Folder");
+        OpenConfiguredFolder(_settings.ConvertedFolder, "変換済みフォルダ");
     }
 
     private void OpenTemporaryFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        OpenConfiguredFolder(_settings.TemporaryFolder, "Temporary Folder");
+        OpenConfiguredFolder(_settings.TemporaryFolder, "一時フォルダ");
     }
 
     private void OpenLocalVideoFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        OpenConfiguredFolder(_settings.LocalVideoFolder, "Local Video Folder");
+        OpenConfiguredFolder(_settings.LocalVideoFolder, "ローカル動画フォルダ");
+    }
+
+    private void Window_Closing(object? sender, CancelEventArgs e)
+    {
+        SavePersistedUiOptions();
     }
 
     private void OutputFolderButton_Click(object sender, RoutedEventArgs e)
@@ -247,6 +255,45 @@ public partial class MainWindow : Window
         }
 
         FetchVideoListButton_Click(FetchVideoListButton, new RoutedEventArgs());
+        e.Handled = true;
+    }
+
+    private void VideoSourceInputTextBox_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = GetDroppedText(e.Data) is null
+            ? DragDropEffects.None
+            : DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private void VideoSourceInputTextBox_Drop(object sender, DragEventArgs e)
+    {
+        var droppedText = GetDroppedText(e.Data);
+        if (droppedText is null)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var urls = GetDroppedUrls(droppedText).ToList();
+        if (urls.Count == 0)
+        {
+            _log.Info($"Dropped text is not recognized as URL: {GetLogPreview(droppedText)}");
+            e.Handled = true;
+            return;
+        }
+
+        var originalUrl = urls[0];
+        var normalizedUrl = NormalizeDraggedUrl(originalUrl);
+        LogDroppedUrlNormalization(originalUrl, normalizedUrl);
+
+        if (sender is System.Windows.Controls.TextBox textBox)
+        {
+            textBox.Text = normalizedUrl;
+            textBox.CaretIndex = textBox.Text.Length;
+            _log.Info($"Dropped URL into video source input: {normalizedUrl}");
+        }
+
         e.Handled = true;
     }
 
@@ -585,6 +632,7 @@ public partial class MainWindow : Window
     private void OutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         UpdateAspectModeSelector();
+        SavePersistedUiOptions();
     }
 
     private void AudioAdjustmentComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -595,6 +643,12 @@ public partial class MainWindow : Window
     private void PeakBoostCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
     {
         UpdateAudioAdjustmentControls();
+        SavePersistedUiOptions();
+    }
+
+    private void PersistedUiOption_Changed(object sender, RoutedEventArgs e)
+    {
+        SavePersistedUiOptions();
     }
 
     private void NumberPrefixTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
@@ -708,21 +762,37 @@ public partial class MainWindow : Window
 
     private void ConversionQueue_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
+        if (e.Handled)
+        {
+            return;
+        }
+
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) || GetDroppedText(e.Data) is not null
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
     }
 
-    private void ConversionQueue_Drop(object sender, DragEventArgs e)
+    private async void ConversionQueue_Drop(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)
-            || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)
+        if (e.Handled)
         {
             return;
         }
 
-        AddLocalFilesToQueue(paths, "drag and drop");
+        if (e.Data.GetDataPresent(DataFormats.FileDrop)
+            && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            e.Handled = true;
+            AddLocalFilesToQueue(paths, "drag and drop");
+            return;
+        }
+
+        if (GetDroppedText(e.Data) is { } droppedText)
+        {
+            e.Handled = true;
+            await AddDroppedTextUrlsToQueueAsync(droppedText);
+        }
     }
 
     private void ConversionQueueDataGrid_PreviewMouseLeftButtonDown(
@@ -765,7 +835,19 @@ public partial class MainWindow : Window
 
     private void ConversionQueueDataGrid_DragOver(object sender, DragEventArgs e)
     {
+        if (e.Handled)
+        {
+            return;
+        }
+
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+            return;
+        }
+
+        if (GetDroppedText(e.Data) is not null)
         {
             e.Effects = DragDropEffects.Copy;
             e.Handled = true;
@@ -778,13 +860,25 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void ConversionQueueDataGrid_Drop(object sender, DragEventArgs e)
+    private async void ConversionQueueDataGrid_Drop(object sender, DragEventArgs e)
     {
+        if (e.Handled)
+        {
+            return;
+        }
+
         if (e.Data.GetDataPresent(DataFormats.FileDrop)
             && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
         {
-            AddLocalFilesToQueue(paths, "drag and drop");
             e.Handled = true;
+            AddLocalFilesToQueue(paths, "drag and drop");
+            return;
+        }
+
+        if (GetDroppedText(e.Data) is { } droppedText)
+        {
+            e.Handled = true;
+            await AddDroppedTextUrlsToQueueAsync(droppedText);
             return;
         }
 
@@ -1689,7 +1783,7 @@ public partial class MainWindow : Window
     private string GetQueueExecutionMode()
     {
         if (QueueExecutionModeComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item
-            && item.Content is string mode)
+            && item.Tag is string mode)
         {
             return mode;
         }
@@ -1741,9 +1835,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var previousPresetId = OutputPresetComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem selectedItem
+        var selectedPresetId = OutputPresetComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem selectedItem
             ? selectedItem.Tag?.ToString()
-            : null;
+            : _settings.OutputPresetId;
 
         OutputPresetComboBox.SelectionChanged -= OutputPresetComboBox_SelectionChanged;
         OutputPresetComboBox.Items.Clear();
@@ -1759,12 +1853,89 @@ public partial class MainWindow : Window
 
         var itemToSelect = OutputPresetComboBox.Items
             .OfType<System.Windows.Controls.ComboBoxItem>()
-            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), previousPresetId, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), selectedPresetId, StringComparison.OrdinalIgnoreCase))
             ?? OutputPresetComboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
 
         OutputPresetComboBox.SelectedItem = itemToSelect;
         OutputPresetComboBox.SelectionChanged += OutputPresetComboBox_SelectionChanged;
         UpdateAspectModeSelector();
+    }
+
+    private void ApplyPersistedUiOptions()
+    {
+        _isApplyingPersistedUiOptions = true;
+        try
+        {
+            SelectComboBoxItemByTag(QueueExecutionModeComboBox, _settings.RunMode);
+            SelectComboBoxItemByTag(OutputPresetComboBox, _settings.OutputPresetId);
+            SelectComboBoxItemByTag(AspectModeComboBox, _settings.AspectMode);
+            KeepOriginalDownloadedFilesCheckBox.IsChecked = _settings.KeepOriginalDownloadedFiles;
+            PeakBoostCheckBox.IsChecked = _settings.PeakBoost;
+            SelectComboBoxItemByContent(
+                TargetPeakComboBox,
+                $"{_settings.TargetPeakDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS",
+                "-1.0 dBFS");
+            NumberPrefixTextBox.Text = string.Empty;
+        }
+        finally
+        {
+            _isApplyingPersistedUiOptions = false;
+        }
+
+        UpdateAspectModeSelector();
+        UpdateAudioAdjustmentControls();
+    }
+
+    private void SavePersistedUiOptions()
+    {
+        if (_isApplyingPersistedUiOptions || _settings is null)
+        {
+            return;
+        }
+
+        _settings.RunMode = GetQueueExecutionMode();
+        _settings.OutputPresetId = OutputPresetComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem presetItem
+            ? presetItem.Tag?.ToString() ?? ConversionPresetCatalog.GetDefault().Id
+            : ConversionPresetCatalog.GetDefault().Id;
+        _settings.AspectMode = GetSelectedAspectMode();
+        _settings.KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true;
+        _settings.PeakBoost = PeakBoostCheckBox.IsChecked == true;
+        _settings.TargetPeakDb = GetSelectedTargetPeakDb();
+
+        try
+        {
+            _settingsService.Save(_settings);
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"UI options could not be saved. {ex.Message}");
+        }
+    }
+
+    private static void SelectComboBoxItemByContent(
+        System.Windows.Controls.ComboBox comboBox,
+        string? value,
+        string fallbackValue)
+    {
+        var itemToSelect = comboBox.Items
+            .OfType<System.Windows.Controls.ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Content?.ToString(), value, StringComparison.OrdinalIgnoreCase))
+            ?? comboBox.Items
+                .OfType<System.Windows.Controls.ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(item.Content?.ToString(), fallbackValue, StringComparison.OrdinalIgnoreCase))
+            ?? comboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
+
+        comboBox.SelectedItem = itemToSelect;
+    }
+
+    private static void SelectComboBoxItemByTag(System.Windows.Controls.ComboBox comboBox, string? value)
+    {
+        var itemToSelect = comboBox.Items
+            .OfType<System.Windows.Controls.ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), value, StringComparison.OrdinalIgnoreCase))
+            ?? comboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
+
+        comboBox.SelectedItem = itemToSelect;
     }
 
     private List<ConversionPreset> GetVisibleOutputPresets()
@@ -1791,14 +1962,14 @@ public partial class MainWindow : Window
     private string GetSelectedAspectMode()
     {
         return AspectModeComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item
-            ? item.Content?.ToString() ?? "Keep aspect ratio + padding"
+            ? item.Tag?.ToString() ?? "Keep aspect ratio + padding"
             : "Keep aspect ratio + padding";
     }
 
     private AudioAdjustmentMode GetSelectedAudioAdjustmentMode()
     {
         var adjustmentText = AudioAdjustmentComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item
-            ? item.Content?.ToString() ?? "Off"
+            ? item.Tag?.ToString() ?? "Off"
             : "Off";
 
         return adjustmentText switch
@@ -1912,8 +2083,8 @@ public partial class MainWindow : Window
     {
         return mode switch
         {
-            AudioAdjustmentMode.LoudnessNormalize => "Loudness normalize",
-            _ => "Off",
+            AudioAdjustmentMode.LoudnessNormalize => "音量ノーマライズ",
+            _ => "なし",
         };
     }
 
@@ -2290,8 +2461,8 @@ public partial class MainWindow : Window
 
     private void UpdateSectionHeaders()
     {
-        CandidatesExpander.Header = $"Video Source ({_videos.Count})";
-        var queueHeader = $"Conversion Queue ({_conversionQueue.Count} item{(_conversionQueue.Count == 1 ? string.Empty : "s")})";
+        CandidatesExpander.Header = $"動画ソース ({_videos.Count})";
+        var queueHeader = $"変換キュー ({_conversionQueue.Count} 件)";
         if (_queueProgressTotal > 0)
         {
             queueHeader += $"  {_queueProgressProcessed}/{_queueProgressTotal}  {GetQueueProgressPercent()}%";
@@ -2336,7 +2507,7 @@ public partial class MainWindow : Window
         QueueProgressBar.Value = Math.Min(_queueProgressProcessed, QueueProgressBar.Maximum);
         QueueProgressTextBlock.Text = _queueProgressTotal > 0
             ? $"{_queueProgressProcessed}/{_queueProgressTotal}  {GetQueueProgressPercent()}%"
-            : "Ready";
+            : "準備完了";
         UpdateSectionHeaders();
     }
 
@@ -2461,7 +2632,10 @@ public partial class MainWindow : Window
         var isSearchMode = YouTubeSearchModeRadioButton.IsChecked == true;
         DirectUrlInputGrid.Visibility = isSearchMode ? Visibility.Collapsed : Visibility.Visible;
         YouTubeSearchInputGrid.Visibility = isSearchMode ? Visibility.Visible : Visibility.Collapsed;
-        FetchVideoListButton.Content = isSearchMode ? "Search Videos" : "Load from URL";
+        FetchVideoListButton.Content = isSearchMode ? "検索" : "URL読込";
+        FetchVideoListButton.ToolTip = isSearchMode
+            ? "入力した検索語で候補を取得します。Enterキーでも実行できます。"
+            : "入力したURLから動画情報を取得します。Enterキーでも実行できます。";
     }
 
     private int SetVideoSelection(bool isSelected)
@@ -2538,6 +2712,296 @@ public partial class MainWindow : Window
         return bitmap;
     }
 
+    private async Task AddDroppedTextUrlsToQueueAsync(string droppedText)
+    {
+        var urls = GetDroppedUrls(droppedText).ToList();
+        if (urls.Count == 0)
+        {
+            _log.Info($"Dropped text is not recognized as URL: {GetLogPreview(droppedText)}");
+            return;
+        }
+
+        await AddOnlineUrlsToQueueAsync(urls, "drag and drop");
+    }
+
+    private async Task AddOnlineUrlsToQueueAsync(IEnumerable<string> urls, string sourceLabel)
+    {
+        var addedCount = 0;
+        var duplicateCount = 0;
+        var fallbackCount = 0;
+        var droppedUrls = urls
+            .Select(originalUrl => new
+            {
+                OriginalUrl = originalUrl,
+                NormalizedUrl = NormalizeDraggedUrl(originalUrl),
+            })
+            .GroupBy(url => url.NormalizedUrl, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+
+        foreach (var droppedUrl in droppedUrls)
+        {
+            var normalizedUrl = droppedUrl.NormalizedUrl;
+            LogDroppedUrlNormalization(droppedUrl.OriginalUrl, normalizedUrl);
+
+            if (QueueContainsSource(normalizedUrl))
+            {
+                duplicateCount++;
+                _log.Info($"Skipped duplicate queue item: {normalizedUrl}");
+                continue;
+            }
+
+            var video = await FetchDroppedUrlMetadataAsync(normalizedUrl);
+            if (video is null)
+            {
+                fallbackCount++;
+                var fallbackTitle = CreateFallbackOnlineVideoTitle(normalizedUrl);
+                _log.Warn($"Using fallback title for dropped URL: {fallbackTitle}");
+                video = new VideoListItem
+                {
+                    IsSelected = true,
+                    Title = fallbackTitle,
+                    Url = normalizedUrl,
+                    SourcePath = normalizedUrl,
+                    SourceType = GetOnlineSourceType(normalizedUrl),
+                    Status = "Pending",
+                };
+            }
+
+            _conversionQueue.Add(new ConversionQueueItem
+            {
+                SourceType = "OnlineVideo",
+                Title = string.IsNullOrWhiteSpace(video.Title)
+                    ? CreateFallbackOnlineVideoTitle(normalizedUrl)
+                    : video.Title,
+                SourcePathOrUrl = normalizedUrl,
+                Status = "Pending",
+            });
+            addedCount++;
+            _log.Info($"Added dropped URL to queue: {normalizedUrl}");
+        }
+
+        RefreshQueueOrderNumbers();
+        _log.Info($"Added {addedCount} online URL item(s) to the conversion queue from {sourceLabel}. Skipped {duplicateCount} duplicate item(s). Used {fallbackCount} fallback title(s).");
+    }
+
+    private async Task<VideoListItem?> FetchDroppedUrlMetadataAsync(string normalizedUrl)
+    {
+        _log.Info($"Fetching metadata for dropped URL: {normalizedUrl}");
+        try
+        {
+            var result = await _videoMetadataService.FetchVideoListAsync(normalizedUrl, message => _log.Info(message));
+            if (!result.IsSuccess || result.Videos.Count == 0)
+            {
+                _log.Warn($"Metadata fetch failed for dropped URL. Exit code: {result.ExitCode?.ToString() ?? "unknown"}.");
+                LogProcessOutput(result.StandardError, "yt-dlp stderr");
+                LogProcessOutput(result.StandardOutput, "yt-dlp stdout");
+                return null;
+            }
+
+            var video = result.Videos[0];
+            _log.Info($"Fetched dropped URL title: {video.Title}");
+            return video;
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Metadata fetch failed for dropped URL: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string CreateFallbackOnlineVideoTitle(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return "Online Video";
+        }
+
+        var id = TryGetYouTubeVideoId(uri) ?? GetLastPathSegment(uri);
+        var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+            ? uri.Host[4..]
+            : uri.Host;
+        var fallback = string.IsNullOrWhiteSpace(id)
+            ? host
+            : $"{host} {id}";
+
+        return SafeFileName.Create(fallback, "Online Video");
+    }
+
+    private static string GetOnlineSourceType(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
+            ? uri.Host
+            : "OnlineVideo";
+    }
+
+    private static string NormalizeDraggedUrl(string text)
+    {
+        var originalText = text.Trim();
+        if (!Uri.TryCreate(originalText, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https"))
+        {
+            return text;
+        }
+
+        var host = uri.Host.ToLowerInvariant();
+        if (host == "youtu.be")
+        {
+            var videoId = GetLastPathSegment(uri);
+            return string.IsNullOrWhiteSpace(videoId)
+                ? text
+                : BuildYouTubeWatchUrl(videoId);
+        }
+
+        if (!IsYouTubeHost(host)
+            || !string.Equals(uri.AbsolutePath, "/watch", StringComparison.OrdinalIgnoreCase))
+        {
+            return text;
+        }
+
+        var queryValues = ParseQueryValues(uri.Query);
+        return queryValues.TryGetValue("v", out var watchVideoId) && !string.IsNullOrWhiteSpace(watchVideoId)
+            ? BuildYouTubeWatchUrl(watchVideoId)
+            : text;
+    }
+
+    private static string? TryGetYouTubeVideoId(Uri uri)
+    {
+        var host = uri.Host.ToLowerInvariant();
+        if (host == "youtu.be")
+        {
+            return GetLastPathSegment(uri);
+        }
+
+        if (!IsYouTubeHost(host) || !string.Equals(uri.AbsolutePath, "/watch", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var queryValues = ParseQueryValues(uri.Query);
+        return queryValues.TryGetValue("v", out var videoId) && !string.IsNullOrWhiteSpace(videoId)
+            ? videoId
+            : null;
+    }
+
+    private static string? GetLastPathSegment(Uri uri)
+    {
+        return uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+    }
+
+    private static bool IsYouTubeHost(string host)
+    {
+        return host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildYouTubeWatchUrl(string videoId)
+    {
+        return $"https://www.youtube.com/watch?v={Uri.EscapeDataString(Uri.UnescapeDataString(videoId))}";
+    }
+
+    private static Dictionary<string, string> ParseQueryValues(string query)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pieces = part.Split('=', 2);
+            var key = Uri.UnescapeDataString(pieces[0].Replace("+", " "));
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            values[key] = pieces.Length > 1
+                ? Uri.UnescapeDataString(pieces[1].Replace("+", " "))
+                : string.Empty;
+        }
+
+        return values;
+    }
+
+    private static IEnumerable<string> GetDroppedUrls(string droppedText)
+    {
+        foreach (var token in droppedText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = token.Trim().Trim('<', '>', '"', '\'');
+            if (IsHttpUrl(candidate))
+            {
+                yield return candidate;
+            }
+        }
+    }
+
+    private static string? GetDroppedText(IDataObject data)
+    {
+        if (data.GetDataPresent(DataFormats.UnicodeText)
+            && data.GetData(DataFormats.UnicodeText) is string unicodeText
+            && !string.IsNullOrWhiteSpace(unicodeText))
+        {
+            return unicodeText.Trim();
+        }
+
+        if (data.GetDataPresent(DataFormats.Text)
+            && data.GetData(DataFormats.Text) is string text
+            && !string.IsNullOrWhiteSpace(text))
+        {
+            return text.Trim();
+        }
+
+        if (data.GetDataPresent("UniformResourceLocatorW"))
+        {
+            return DecodeDroppedUrlData(data.GetData("UniformResourceLocatorW"), isUnicode: true);
+        }
+
+        if (data.GetDataPresent("UniformResourceLocator"))
+        {
+            return DecodeDroppedUrlData(data.GetData("UniformResourceLocator"), isUnicode: false);
+        }
+
+        return null;
+    }
+
+    private static string? DecodeDroppedUrlData(object? data, bool isUnicode)
+    {
+        byte[]? bytes = data switch
+        {
+            byte[] byteArray => byteArray,
+            MemoryStream memoryStream => memoryStream.ToArray(),
+            _ => null,
+        };
+        if (bytes is null || bytes.Length == 0)
+        {
+            return null;
+        }
+
+        var text = isUnicode
+            ? System.Text.Encoding.Unicode.GetString(bytes)
+            : System.Text.Encoding.ASCII.GetString(bytes);
+        text = text.Trim('\0', '\r', '\n', ' ', '\t');
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static bool IsHttpUrl(string text)
+    {
+        return Uri.TryCreate(text, UriKind.Absolute, out var uri)
+            && uri.Scheme is "http" or "https";
+    }
+
+    private void LogDroppedUrlNormalization(string originalUrl, string normalizedUrl)
+    {
+        _log.Info($"Dropped URL: {originalUrl}");
+        if (!string.Equals(originalUrl, normalizedUrl, StringComparison.Ordinal))
+        {
+            _log.Info($"Normalized dropped URL: {normalizedUrl}");
+        }
+    }
+
+    private static string GetLogPreview(string text)
+    {
+        var preview = text.Replace(Environment.NewLine, " ").Trim();
+        return preview.Length <= 120 ? preview : $"{preview[..120]}...";
+    }
+
     private void AddLocalFilesToQueue(IEnumerable<string> paths, string sourceLabel)
     {
         var addedCount = 0;
@@ -2545,7 +3009,7 @@ public partial class MainWindow : Window
         var duplicateCount = 0;
         var ignoredFolderCount = 0;
 
-        foreach (var path in paths)
+        foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (Directory.Exists(path))
             {

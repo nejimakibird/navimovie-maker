@@ -36,6 +36,7 @@ public sealed class SettingsService
 
             NormalizeDownloadProfile(settings);
             NormalizeVisibleOutputPresets(settings);
+            NormalizeUiOptions(settings);
             return settings;
         }
         catch (Exception ex)
@@ -76,6 +77,12 @@ public sealed class SettingsService
             LocalVideoFolder = Path.Combine(baseFolder, "local"),
             CreateSubfolderPerOutputPreset = true,
             DownloadProfile = DownloadProfileCatalog.AutoId,
+            RunMode = "Download & Convert",
+            OutputPresetId = ConversionPresetCatalog.GetDefault().Id,
+            AspectMode = "Keep aspect ratio + padding",
+            KeepOriginalDownloadedFiles = false,
+            PeakBoost = false,
+            TargetPeakDb = -1.0,
             VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList(),
         };
     }
@@ -110,6 +117,47 @@ public sealed class SettingsService
         if (!DownloadProfileCatalog.IsKnownProfile(settings.DownloadProfile))
         {
             settings.DownloadProfile = DownloadProfileCatalog.AutoId;
+        }
+    }
+
+    private static void NormalizeUiOptions(AppSettings settings)
+    {
+        string[] knownRunModes =
+        [
+            "Download Only",
+            "Download & Convert",
+            "Convert Only",
+            "Copy Files",
+        ];
+
+        if (!knownRunModes.Contains(settings.RunMode, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.RunMode = "Download & Convert";
+        }
+
+        var knownPresetIds = ConversionPresetCatalog.GetPresets()
+            .Select(static preset => preset.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!knownPresetIds.Contains(settings.OutputPresetId))
+        {
+            settings.OutputPresetId = ConversionPresetCatalog.GetDefault().Id;
+        }
+
+        string[] knownAspectModes =
+        [
+            "Keep aspect ratio + padding",
+            "Stretch to fit",
+        ];
+
+        if (!knownAspectModes.Contains(settings.AspectMode, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.AspectMode = "Keep aspect ratio + padding";
+        }
+
+        double[] knownTargetPeaks = [-1.0, -3.0, -6.0];
+        if (!knownTargetPeaks.Contains(settings.TargetPeakDb))
+        {
+            settings.TargetPeakDb = -1.0;
         }
     }
 

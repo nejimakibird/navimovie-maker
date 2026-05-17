@@ -6,7 +6,9 @@
         xmlns:services="clr-namespace:NaviMovieMaker.App.Services"
         mc:Ignorable="d"
         Title="NaviMovie-Maker" Height="860" Width="1280" MinHeight="760" MinWidth="1080"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing"
+        Icon="pack://application:,,,/Assets/app.ico">
     <Window.Resources>
         <Style x:Key="LogMarkerStyle" TargetType="TextBlock">
             <Setter Property="Text" Value="●" />
@@ -60,22 +62,22 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <Menu Margin="0,0,0,14">
-                <MenuItem Header="_Tools">
+                <MenuItem Header="_ツール">
                     <MenuItem x:Name="CheckExternalToolsMenuItem"
-                              Header="Check External Tools"
+                              Header="外部ツール確認"
                               Click="CheckExternalToolsMenuItem_Click" />
                     <Separator />
                     <MenuItem x:Name="SettingsMenuItem"
-                              Header="Settings"
+                              Header="設定"
                               Click="SettingsMenuItem_Click" />
                     <Separator />
-                    <MenuItem Header="Open Working Folder"
+                    <MenuItem Header="作業フォルダを開く"
                               Click="OpenWorkingFolderMenuItem_Click" />
-                    <MenuItem Header="Open Converted Folder"
+                    <MenuItem Header="変換済みフォルダを開く"
                               Click="OpenConvertedFolderMenuItem_Click" />
-                    <MenuItem Header="Open Temporary Folder"
+                    <MenuItem Header="一時フォルダを開く"
                               Click="OpenTemporaryFolderMenuItem_Click" />
-                    <MenuItem Header="Open Local Video Folder"
+                    <MenuItem Header="ローカル動画フォルダを開く"
                               Click="OpenLocalVideoFolderMenuItem_Click" />
                 </MenuItem>
             </Menu>
@@ -95,7 +97,7 @@
 
             <Expander x:Name="CandidatesExpander"
                       Grid.Row="0"
-                      Header="Video Source (0)"
+                      Header="動画ソース (0)"
                       IsExpanded="True"
                       Margin="0,0,0,8"
                       Expanded="CandidatesExpander_Expanded"
@@ -107,7 +109,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <GroupBox Grid.Row="0" Header="Video Source" Margin="0,0,0,10">
+                    <GroupBox Grid.Row="0" Header="動画ソース" Margin="0,0,0,10">
                         <Grid Margin="12">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -120,12 +122,14 @@
 
                             <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,10">
                                 <RadioButton x:Name="YouTubeSearchModeRadioButton"
-                                             Content="Search"
+                                             Content="検索"
+                                             ToolTip="検索語で動画候補を取得します。現在はYouTube検索を使用します。"
                                              IsChecked="True"
                                              VerticalAlignment="Center"
                                              Checked="SourceModeRadioButton_Checked" />
                                 <RadioButton x:Name="DirectUrlModeRadioButton"
-                                             Content="Direct URL"
+                                             Content="URL指定"
+                                             ToolTip="動画URLやプレイリストURLを直接指定します。yt-dlp対応サイトで動作する場合があります。"
                                              Margin="18,0,0,0"
                                              VerticalAlignment="Center"
                                              Checked="SourceModeRadioButton_Checked" />
@@ -138,15 +142,18 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0"
-                                           Text="Video URL"
+                                           Text="動画URL"
                                            VerticalAlignment="Center"
                                            Margin="0,0,10,0" />
                                 <TextBox x:Name="UrlTextBox"
                                          Grid.Column="1"
+                                         AllowDrop="True"
                                          MinHeight="32"
                                          VerticalContentAlignment="Center"
                                          KeyDown="VideoSourceInputTextBox_KeyDown"
-                                         ToolTip="Paste a video, playlist, channel, or other yt-dlp-supported URL." />
+                                         DragOver="VideoSourceInputTextBox_DragOver"
+                                         Drop="VideoSourceInputTextBox_Drop"
+                                         ToolTip="動画URLやプレイリストURLを直接指定します。yt-dlp対応サイトで動作する場合があります。" />
                             </Grid>
 
                             <Grid x:Name="YouTubeSearchInputGrid" Grid.Row="1" Grid.Column="0" Visibility="Collapsed">
@@ -158,17 +165,20 @@
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0"
-                                           Text="Search Query"
+                                           Text="検索語"
                                            VerticalAlignment="Center"
                                            Margin="0,0,10,0" />
                                 <TextBox x:Name="SearchQueryTextBox"
                                          Grid.Column="1"
+                                         AllowDrop="True"
                                          MinHeight="32"
                                          VerticalContentAlignment="Center"
                                          KeyDown="VideoSourceInputTextBox_KeyDown"
-                                         ToolTip="Search YouTube through yt-dlp without opening a browser." />
+                                         DragOver="VideoSourceInputTextBox_DragOver"
+                                         Drop="VideoSourceInputTextBox_Drop"
+                                         ToolTip="検索語で動画候補を取得します。現在はYouTube検索を使用します。" />
                                 <TextBlock Grid.Column="2"
-                                           Text="Results"
+                                           Text="検索結果"
                                            VerticalAlignment="Center"
                                            Margin="12,0,8,0" />
                                 <ComboBox x:Name="SearchResultCountComboBox"
@@ -185,7 +195,8 @@
                             <Button x:Name="FetchVideoListButton"
                                     Grid.Row="1"
                                     Grid.Column="1"
-                                    Content="Load from URL"
+                                    Content="URL読込"
+                                    ToolTip="入力したURLから動画情報を取得します。Enterキーでも実行できます。"
                                     MinWidth="130"
                                     MinHeight="32"
                                     Margin="12,0,0,0"
@@ -195,62 +206,63 @@
 
                     <WrapPanel Grid.Row="1" Margin="0,0,0,8">
                         <Button x:Name="SelectAllVideosButton"
-                                Content="Select All"
+                                Content="すべて選択"
                                 MinWidth="90"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Visibility="Collapsed"
                                 Click="SelectAllVideosButton_Click" />
                         <Button x:Name="DeselectAllVideosButton"
-                                Content="Deselect All"
+                                Content="選択解除"
                                 MinWidth="100"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Visibility="Collapsed"
                                 Click="DeselectAllVideosButton_Click" />
                         <Button x:Name="InvertVideoSelectionButton"
-                                Content="Invert Selection"
+                                Content="選択反転"
                                 MinWidth="120"
                                 MinHeight="30"
                                 Margin="0,0,16,8"
                                 Visibility="Collapsed"
                                 Click="InvertVideoSelectionButton_Click" />
                         <Button x:Name="MoveUpButton"
-                                Content="Move Up"
+                                Content="上へ"
                                 MinWidth="90"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Visibility="Collapsed"
                                 Click="MoveUpButton_Click" />
                         <Button x:Name="MoveDownButton"
-                                Content="Move Down"
+                                Content="下へ"
                                 MinWidth="90"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Visibility="Collapsed"
                                 Click="MoveDownButton_Click" />
                         <Button x:Name="RemoveButton"
-                                Content="Remove"
+                                Content="削除"
                                 MinWidth="90"
                                 MinHeight="30"
                                 Margin="0,0,16,8"
                                 Visibility="Collapsed"
                                 Click="RemoveButton_Click" />
                         <Button x:Name="AddSelectedToQueueButton"
-                                Content="Add Selected to Queue"
+                                Content="選択項目をキューへ追加"
+                                ToolTip="選択した候補を変換キューに追加します。"
                                 MinWidth="160"
                                 MinHeight="30"
                                 Margin="0,0,0,8"
                                 Click="AddSelectedToQueueButton_Click" />
                         <Button x:Name="DownloadSelectedButton"
-                                Content="Download Selected"
+                                Content="選択項目をDL"
                                 MinWidth="140"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Visibility="Collapsed"
                                 Click="DownloadSelectedButton_Click" />
                         <Button x:Name="CancelDownloadButton"
-                                Content="Cancel"
+                                Content="キャンセル"
                                 IsEnabled="False"
                                 MinWidth="80"
                                 MinHeight="30"
@@ -258,7 +270,7 @@
                                 Visibility="Collapsed"
                                 Click="CancelDownloadButton_Click" />
                         <Button x:Name="ConvertDownloadedButton"
-                                Content="Convert Selected"
+                                Content="選択項目を変換"
                                 MinWidth="150"
                                 MinHeight="30"
                                 Margin="0,0,0,8"
@@ -281,7 +293,7 @@
                                                 Binding="{Binding Order}"
                                                 IsReadOnly="True"
                                                 Width="50" />
-                            <DataGridTemplateColumn Header="Thumb"
+                            <DataGridTemplateColumn Header="サムネ"
                                                     IsReadOnly="True"
                                                     Width="136">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -291,7 +303,7 @@
                                                 Background="Transparent"
                                                 Cursor="Hand"
                                                 Focusable="False"
-                                                ToolTip="Open video in browser"
+                                                ToolTip="ブラウザで動画を開く"
                                                 Click="CandidateThumbnailButton_Click">
                                             <Border Width="120"
                                                     Height="68"
@@ -307,19 +319,19 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Title"
+                            <DataGridTextColumn Header="タイトル"
                                                 Binding="{Binding Title}"
                                                 IsReadOnly="True"
                                                 Width="*" />
-                            <DataGridTextColumn Header="Source"
+                            <DataGridTextColumn Header="ソース"
                                                 Binding="{Binding SourceType}"
                                                 IsReadOnly="True"
                                                 Width="90" />
-                            <DataGridTextColumn Header="Duration"
+                            <DataGridTextColumn Header="長さ"
                                                 Binding="{Binding DurationText}"
                                                 IsReadOnly="True"
                                                 Width="100" />
-                            <DataGridTextColumn Header="Status"
+                            <DataGridTextColumn Header="状態"
                                                 Binding="{Binding Status}"
                                                 IsReadOnly="True"
                                                 Width="140" />
@@ -340,7 +352,7 @@
 
             <Expander x:Name="ConversionQueueExpander"
                       Grid.Row="2"
-                      Header="Conversion Queue (0)"
+                      Header="変換キュー (0)"
                       IsExpanded="True"
                       Margin="0,0,0,8"
                       AllowDrop="True"
@@ -357,49 +369,62 @@
                     </Grid.RowDefinitions>
 
                     <WrapPanel Grid.Row="0" Margin="0,0,0,8">
-                        <TextBlock Text="Run Mode"
+                        <TextBlock Text="実行モード"
+                                   ToolTip="キューをどの方法で処理するかを選びます。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <ComboBox x:Name="QueueExecutionModeComboBox"
+                                  ToolTip="キューをどの方法で処理するかを選びます。"
                                   MinWidth="150"
                                   MinHeight="30"
                                   Margin="0,0,12,8"
-                                  SelectedIndex="1">
-                            <ComboBoxItem Content="Download Only" />
-                            <ComboBoxItem Content="Download &amp; Convert" />
-                            <ComboBoxItem Content="Convert Only" />
-                            <ComboBoxItem Content="Copy Files" />
+                                  SelectedIndex="1"
+                                  SelectionChanged="PersistedUiOption_Changed">
+                            <ComboBoxItem Content="ダウンロードのみ" Tag="Download Only" />
+                            <ComboBoxItem Content="ダウンロードして変換" Tag="Download &amp; Convert" />
+                            <ComboBoxItem Content="変換のみ" Tag="Convert Only" />
+                            <ComboBoxItem Content="ファイルコピー" Tag="Copy Files" />
                         </ComboBox>
-                        <TextBlock Text="Output Preset"
+                        <TextBlock Text="出力形式"
+                                   ToolTip="変換後のファイル形式や品質を選びます。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <ComboBox x:Name="OutputPresetComboBox"
+                                  ToolTip="変換後のファイル形式や品質を選びます。"
                                   MinWidth="260"
                                   MinHeight="30"
                                   Margin="0,0,12,8"
                                   SelectionChanged="OutputPresetComboBox_SelectionChanged" />
                         <TextBlock x:Name="AspectModeLabel"
-                                   Text="Aspect Mode"
+                                   Text="画面比率"
+                                   ToolTip="元動画の比率を維持するか、出力サイズに引き伸ばすかを選びます。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <ComboBox x:Name="AspectModeComboBox"
+                                  ToolTip="元動画の比率を維持するか、出力サイズに引き伸ばすかを選びます。"
                                   MinWidth="210"
                                   MinHeight="30"
                                   Margin="0,0,12,8"
-                                  SelectedIndex="0">
-                            <ComboBoxItem Content="Keep aspect ratio + padding" />
-                            <ComboBoxItem Content="Stretch to fit" />
+                                  SelectedIndex="0"
+                                  SelectionChanged="PersistedUiOption_Changed">
+                            <ComboBoxItem Content="比率維持＋余白" Tag="Keep aspect ratio + padding" />
+                            <ComboBoxItem Content="引き伸ばし" Tag="Stretch to fit" />
                         </ComboBox>
                         <CheckBox x:Name="KeepOriginalDownloadedFilesCheckBox"
-                                  Content="Keep DL Files"
+                                  Content="DL元を残す"
+                                  ToolTip="ダウンロードして変換する時に、変換前の元ファイルを作業フォルダに残します。"
                                   IsChecked="False"
                                   VerticalAlignment="Center"
-                                  Margin="0,0,12,8" />
-                        <TextBlock Text="Number Prefix"
+                                  Margin="0,0,12,8"
+                                  Checked="PersistedUiOption_Changed"
+                                  Unchecked="PersistedUiOption_Changed" />
+                        <TextBlock Text="連番開始"
+                                   ToolTip="空欄なら連番なし。1なら001_、16なら016_から連番を付けます。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <TextBox x:Name="NumberPrefixTextBox"
                                  Text=""
+                                 ToolTip="空欄なら連番なし。1なら001_、16なら016_から連番を付けます。"
                                  Width="64"
                                  MinHeight="30"
                                  VerticalContentAlignment="Center"
@@ -409,39 +434,46 @@
 
                     <WrapPanel Grid.Row="1" Margin="0,0,0,8">
                         <CheckBox x:Name="PeakBoostCheckBox"
-                                  Content="Peak Boost"
+                                  Content="音量持ち上げ"
+                                  ToolTip="音量ピークが低いファイルだけ、目標ピークまで自動で持ち上げます。すでに大きい音源は下げません。"
                                   IsChecked="False"
                                   VerticalAlignment="Center"
                                   Margin="0,0,12,8"
                                   Checked="PeakBoostCheckBox_CheckedChanged"
                                   Unchecked="PeakBoostCheckBox_CheckedChanged" />
-                        <TextBlock Text="Set Audio"
+                        <TextBlock Text="音声補正"
+                                   ToolTip="選択中のキュー項目に、音量ノーマライズなどの音声補正を設定します。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <ComboBox x:Name="AudioAdjustmentComboBox"
+                                  ToolTip="選択中のキュー項目に、音量ノーマライズなどの音声補正を設定します。"
                                   MinWidth="160"
                                   MinHeight="30"
                                   Margin="0,0,8,8"
                                   SelectedIndex="0"
                                   SelectionChanged="AudioAdjustmentComboBox_SelectionChanged">
-                            <ComboBoxItem Content="Off" />
-                            <ComboBoxItem Content="Loudness normalize" />
+                            <ComboBoxItem Content="なし" Tag="Off" />
+                            <ComboBoxItem Content="音量ノーマライズ" Tag="Loudness normalize" />
                         </ComboBox>
                         <Button x:Name="ApplyAudioAdjustmentButton"
-                                Content="Apply to selected queue items"
+                                Content="選択項目に適用"
+                                ToolTip="選択中のキュー項目に、音量ノーマライズなどの音声補正を設定します。"
                                 MinWidth="190"
                                 MinHeight="30"
                                 Margin="0,0,12,8"
                                 Click="ApplyAudioAdjustmentButton_Click" />
                         <TextBlock x:Name="TargetPeakLabel"
-                                   Text="Target Peak"
+                                   Text="目標ピーク"
+                                   ToolTip="音量持ち上げ時の目標ピークを指定します。通常は -1.0 dBFS で十分です。"
                                    VerticalAlignment="Center"
                                    Margin="0,0,8,8" />
                         <ComboBox x:Name="TargetPeakComboBox"
+                                  ToolTip="音量持ち上げ時の目標ピークを指定します。通常は -1.0 dBFS で十分です。"
                                   MinWidth="90"
                                   MinHeight="30"
                                   Margin="0,0,12,8"
-                                  SelectedIndex="0">
+                                  SelectedIndex="0"
+                                  SelectionChanged="PersistedUiOption_Changed">
                             <ComboBoxItem Content="-1.0 dBFS" />
                             <ComboBoxItem Content="-3.0 dBFS" />
                             <ComboBoxItem Content="-6.0 dBFS" />
@@ -450,7 +482,8 @@
 
                     <WrapPanel Grid.Row="2" Margin="0,0,0,8">
                         <Button x:Name="ConvertQueueButton"
-                                Content="Run Queue"
+                                Content="実行"
+                                ToolTip="現在のキューを上から順に処理します。"
                                 MinWidth="110"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
@@ -464,25 +497,28 @@
                                      VerticalAlignment="Center"
                                      Margin="0,0,8,8" />
                         <TextBlock x:Name="QueueProgressTextBlock"
-                                   Text="Ready"
+                                   Text="準備完了"
                                    MinWidth="86"
                                    VerticalAlignment="Center"
                                    Margin="0,0,16,8" />
                         <Button x:Name="RetryFailedQueueButton"
-                                Content="Retry Failed"
+                                Content="失敗分を再実行"
+                                ToolTip="失敗したキュー項目だけを再実行します。"
                                 MinWidth="110"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Click="RetryFailedQueueButton_Click" />
                         <Button x:Name="CancelQueueButton"
-                                Content="Cancel Queue"
+                                Content="キャンセル"
+                                ToolTip="実行中のキュー処理をキャンセルします。"
                                 IsEnabled="False"
                                 MinWidth="110"
                                 MinHeight="30"
                                 Margin="0,0,8,8"
                                 Click="CancelQueueButton_Click" />
                         <Button x:Name="OpenConvertedFolderButton"
-                                Content="Output Folder..."
+                                Content="出力先..."
+                                ToolTip="変換やコピーの出力先フォルダを選択します。"
                                 MinWidth="130"
                                 MinHeight="30"
                                 Margin="0,0,0,8"
@@ -517,23 +553,23 @@
                                                     Binding="{Binding Order}"
                                                     IsReadOnly="True"
                                                     Width="50" />
-                                <DataGridTextColumn Header="Source"
+                                <DataGridTextColumn Header="ソース"
                                                     Binding="{Binding SourceType}"
                                                     IsReadOnly="True"
                                                     Width="100" />
-                                <DataGridTextColumn Header="Title / File Name"
+                                <DataGridTextColumn Header="タイトル / ファイル名"
                                                     Binding="{Binding Title}"
                                                     IsReadOnly="True"
                                                     Width="220" />
-                                <DataGridTextColumn Header="Source Path or URL"
+                                <DataGridTextColumn Header="ソースパス / URL"
                                                     Binding="{Binding SourcePathOrUrl}"
                                                     IsReadOnly="True"
                                                     Width="*" />
-                                <DataGridTextColumn Header="Audio"
+                                <DataGridTextColumn Header="音声"
                                                     Binding="{Binding AudioAdjustmentDisplay}"
                                                     IsReadOnly="True"
                                                     Width="100" />
-                                <DataGridTextColumn Header="Status"
+                                <DataGridTextColumn Header="状態"
                                                     Binding="{Binding Status}"
                                                     IsReadOnly="True"
                                                     Width="150" />
@@ -543,28 +579,28 @@
                         <StackPanel Grid.Column="1" Margin="8,0,0,0">
                             <Button x:Name="QueueMoveUpButton"
                                     Content="↑"
-                                    ToolTip="Move selected queue item up"
+                                    ToolTip="選択した項目を上へ移動します。"
                                     Width="64"
                                     MinHeight="30"
                                     Margin="0,0,0,8"
                                     Click="QueueMoveUpButton_Click" />
                             <Button x:Name="QueueMoveDownButton"
                                     Content="↓"
-                                    ToolTip="Move selected queue item down"
+                                    ToolTip="選択した項目を下へ移動します。"
                                     Width="64"
                                     MinHeight="30"
                                     Margin="0,0,0,8"
                                     Click="QueueMoveDownButton_Click" />
                             <Button x:Name="QueueRemoveButton"
-                                    Content="Delete"
-                                    ToolTip="Remove selected queue rows"
+                                    Content="削除"
+                                    ToolTip="選択したキュー項目を削除します。Deleteキーでも削除できます。"
                                     Width="64"
                                     MinHeight="30"
                                     Margin="0,0,0,8"
                                     Click="QueueRemoveButton_Click" />
                             <Button x:Name="QueueClearButton"
-                                    Content="Clear"
-                                    ToolTip="Clear the whole queue"
+                                    Content="クリア"
+                                    ToolTip="キュー内のすべての項目を削除します。"
                                     Width="64"
                                     MinHeight="30"
                                     Click="QueueClearButton_Click" />
@@ -585,7 +621,7 @@
 
             <Expander x:Name="LogExpander"
                       Grid.Row="4"
-                      Header="Log"
+                      Header="ログ"
                       IsExpanded="False"
                       VerticalAlignment="Stretch"
                       Expanded="LogExpander_Expanded"
@@ -601,7 +637,7 @@
                          VirtualizingStackPanel.VirtualizationMode="Recycling">
                     <ListBox.ContextMenu>
                         <ContextMenu>
-                            <MenuItem Header="Copy All Logs"
+                            <MenuItem Header="ログをコピー"
                                       Click="CopyAllLogsMenuItem_Click" />
                         </ContextMenu>
                     </ListBox.ContextMenu>

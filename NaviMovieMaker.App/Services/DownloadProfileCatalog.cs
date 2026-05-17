@@ -14,13 +14,13 @@ public static class DownloadProfileCatalog
 
     private static readonly DownloadProfileOption[] Profiles =
     [
-        new(AutoId, "Auto", null),
-        new(BestId, "Best", "bv*+ba/b"),
-        new(VideoAudio720pId, "Video + Audio 720p", "bv*[height<=720]+ba/b[height<=720]"),
-        new(VideoAudio480pId, "Video + Audio 480p", "bv*[height<=480]+ba/b[height<=480]"),
-        new(Mp4VideoAudio720pId, "MP4 Video + Audio 720p", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"),
-        new(Mp4VideoAudio480pId, "MP4 Video + Audio 480p", "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/b[height<=480]"),
-        new(AudioOnlyId, "Audio Only", "ba/bestaudio"),
+        new(AutoId, "自動", null),
+        new(BestId, "最高品質", "bv*+ba/b"),
+        new(VideoAudio720pId, "動画＋音声 720p", "bv*[height<=720]+ba/b[height<=720]"),
+        new(VideoAudio480pId, "動画＋音声 480p", "bv*[height<=480]+ba/b[height<=480]"),
+        new(Mp4VideoAudio720pId, "MP4動画＋音声 720p", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"),
+        new(Mp4VideoAudio480pId, "MP4動画＋音声 480p", "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/b[height<=480]"),
+        new(AudioOnlyId, "音声のみ", "ba/bestaudio"),
     ];
 
     public static IReadOnlyList<DownloadProfileOption> GetProfiles()

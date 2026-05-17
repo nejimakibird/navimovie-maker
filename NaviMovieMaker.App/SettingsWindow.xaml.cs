@@ -35,22 +35,22 @@ public partial class SettingsWindow : Window
 
     private void BrowseWorkingFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        BrowseForFolder(WorkingFolderTextBox, "Select working folder");
+        BrowseForFolder(WorkingFolderTextBox, "作業フォルダを選択");
     }
 
     private void BrowseTemporaryFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        BrowseForFolder(TemporaryFolderTextBox, "Select temporary folder");
+        BrowseForFolder(TemporaryFolderTextBox, "一時フォルダを選択");
     }
 
     private void BrowseConvertedFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        BrowseForFolder(ConvertedFolderTextBox, "Select converted output folder");
+        BrowseForFolder(ConvertedFolderTextBox, "変換済みフォルダを選択");
     }
 
     private void BrowseLocalVideoFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        BrowseForFolder(LocalVideoFolderTextBox, "Select local video folder");
+        BrowseForFolder(LocalVideoFolderTextBox, "ローカル動画フォルダを選択");
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -63,13 +63,19 @@ public partial class SettingsWindow : Window
             LocalVideoFolder = LocalVideoFolderTextBox.Text.Trim(),
             CreateSubfolderPerOutputPreset = CreatePresetSubfolderCheckBox.IsChecked == true,
             DownloadProfile = DownloadProfileComboBox.SelectedValue?.ToString() ?? DownloadProfileCatalog.AutoId,
+            RunMode = Settings.RunMode,
+            OutputPresetId = Settings.OutputPresetId,
+            AspectMode = Settings.AspectMode,
+            KeepOriginalDownloadedFiles = Settings.KeepOriginalDownloadedFiles,
+            PeakBoost = Settings.PeakBoost,
+            TargetPeakDb = Settings.TargetPeakDb,
             VisibleOutputPresetIds = _visiblePresets.Select(static preset => preset.Id).ToList(),
         };
 
         var validationError = Validate(settings);
         if (validationError is not null)
         {
-            MessageBox.Show(this, validationError, "Invalid Settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, validationError, "設定エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -82,8 +88,8 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(
                 this,
-                $"Settings could not be saved or folders could not be created. {ex.Message}",
-                "Save Settings Failed",
+                $"設定を保存できないか、フォルダを作成できませんでした。{ex.Message}",
+                "設定保存エラー",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             return;
@@ -215,22 +221,22 @@ public partial class SettingsWindow : Window
     {
         if (string.IsNullOrWhiteSpace(settings.WorkingFolder))
         {
-            return "Working Folder is required.";
+            return "作業フォルダは必須です。";
         }
 
         if (string.IsNullOrWhiteSpace(settings.TemporaryFolder))
         {
-            return "Temporary Folder is required.";
+            return "一時フォルダは必須です。";
         }
 
         if (string.IsNullOrWhiteSpace(settings.ConvertedFolder))
         {
-            return "Converted Folder is required.";
+            return "変換済みフォルダは必須です。";
         }
 
         if (string.IsNullOrWhiteSpace(settings.LocalVideoFolder))
         {
-            return "Local Video Folder is required.";
+            return "ローカル動画フォルダは必須です。";
         }
 
         return null;
