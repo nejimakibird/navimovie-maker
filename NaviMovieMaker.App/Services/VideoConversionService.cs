@@ -8,6 +8,8 @@ namespace NaviMovieMaker.App.Services;
 
 public sealed class VideoConversionService
 {
+    public string FfmpegPath { get; set; } = "ffmpeg";
+
     public async Task<VideoConversionResult> ConvertAsync(
         string inputFilePath,
         string outputFilePath,
@@ -15,6 +17,7 @@ public sealed class VideoConversionService
         ConversionPreset? preset = null,
         string aspectMode = "Keep aspect ratio + padding",
         string audioFilter = "",
+        Action<FfmpegProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
         preset ??= ConversionPresetCatalog.GetDefault();
@@ -23,7 +26,7 @@ public sealed class VideoConversionService
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -34,6 +37,7 @@ public sealed class VideoConversionService
 
         process.StartInfo.ArgumentList.Add("-i");
         process.StartInfo.ArgumentList.Add(inputFilePath);
+        AddProgressArguments(process.StartInfo.ArgumentList);
         var videoFilter = BuildVideoFilter(preset, aspectMode);
         AddPresetArguments(process.StartInfo.ArgumentList, preset, videoFilter, audioFilter);
         process.StartInfo.ArgumentList.Add(outputFilePath);
@@ -66,8 +70,9 @@ public sealed class VideoConversionService
                 }
             });
 
-            var outputTask = ReadStreamAsync(process.StandardOutput, standardOutput, log, cancellationToken);
-            var errorTask = ReadStreamAsync(process.StandardError, standardError, log, cancellationToken);
+            var progressState = new FfmpegProgressState(progress);
+            var outputTask = ReadProgressStreamAsync(process.StandardOutput, standardOutput, progressState, cancellationToken);
+            var errorTask = ReadLogStreamAsync(process.StandardError, standardError, log, progressState, cancellationToken);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(outputTask, errorTask);
@@ -108,7 +113,7 @@ public sealed class VideoConversionService
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -181,13 +186,14 @@ public sealed class VideoConversionService
         string outputFilePath,
         Action<string> log,
         string audioFilter = "",
+        Action<FfmpegProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -198,6 +204,7 @@ public sealed class VideoConversionService
 
         process.StartInfo.ArgumentList.Add("-i");
         process.StartInfo.ArgumentList.Add(inputFilePath);
+        AddProgressArguments(process.StartInfo.ArgumentList);
         process.StartInfo.ArgumentList.Add("-vn");
         process.StartInfo.ArgumentList.Add("-c:a");
         process.StartInfo.ArgumentList.Add("aac");
@@ -245,8 +252,9 @@ public sealed class VideoConversionService
                 }
             });
 
-            var outputTask = ReadStreamAsync(process.StandardOutput, standardOutput, log, cancellationToken);
-            var errorTask = ReadStreamAsync(process.StandardError, standardError, log, cancellationToken);
+            var progressState = new FfmpegProgressState(progress);
+            var outputTask = ReadProgressStreamAsync(process.StandardOutput, standardOutput, progressState, cancellationToken);
+            var errorTask = ReadLogStreamAsync(process.StandardError, standardError, log, progressState, cancellationToken);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(outputTask, errorTask);
@@ -284,13 +292,14 @@ public sealed class VideoConversionService
         Action<string> log,
         ConversionPreset preset,
         string audioFilter = "",
+        Action<FfmpegProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -301,6 +310,7 @@ public sealed class VideoConversionService
 
         process.StartInfo.ArgumentList.Add("-i");
         process.StartInfo.ArgumentList.Add(inputFilePath);
+        AddProgressArguments(process.StartInfo.ArgumentList);
         AddAudioPresetArguments(process.StartInfo.ArgumentList, preset, audioFilter);
         process.StartInfo.ArgumentList.Add(outputFilePath);
 
@@ -332,8 +342,9 @@ public sealed class VideoConversionService
                 }
             });
 
-            var outputTask = ReadStreamAsync(process.StandardOutput, standardOutput, log, cancellationToken);
-            var errorTask = ReadStreamAsync(process.StandardError, standardError, log, cancellationToken);
+            var progressState = new FfmpegProgressState(progress);
+            var outputTask = ReadProgressStreamAsync(process.StandardOutput, standardOutput, progressState, cancellationToken);
+            var errorTask = ReadLogStreamAsync(process.StandardError, standardError, log, progressState, cancellationToken);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(outputTask, errorTask);
@@ -502,6 +513,12 @@ public sealed class VideoConversionService
         }
     }
 
+    private static void AddProgressArguments(IList<string> arguments)
+    {
+        arguments.Add("-progress");
+        arguments.Add("pipe:1");
+    }
+
     private static string BuildVideoFilter(ConversionPreset preset, string aspectMode)
     {
         if (preset.SupportsAspectMode)
@@ -557,6 +574,176 @@ public sealed class VideoConversionService
 
             output.AppendLine(line);
             log(line);
+        }
+    }
+
+    private static async Task ReadLogStreamAsync(
+        StreamReader reader,
+        StringBuilder output,
+        Action<string> log,
+        FfmpegProgressState progressState,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
+            output.AppendLine(line);
+            log(line);
+            progressState.UpdateFromLogLine(line);
+        }
+    }
+
+    private static async Task ReadProgressStreamAsync(
+        StreamReader reader,
+        StringBuilder output,
+        FfmpegProgressState progressState,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
+            output.AppendLine(line);
+            progressState.UpdateFromProgressLine(line);
+        }
+    }
+
+    private sealed class FfmpegProgressState(Action<FfmpegProgressInfo>? progress)
+    {
+        private readonly object _gate = new();
+        private TimeSpan? _convertedTime;
+        private TimeSpan? _totalDuration;
+        private string _speed = string.Empty;
+
+        public void UpdateFromLogLine(string line)
+        {
+            var match = Regex.Match(line, @"Duration:\s*(?<duration>\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            var shouldPublish = false;
+            if (match.Success && TryParseFfmpegTime(match.Groups["duration"].Value, out var duration))
+            {
+                lock (_gate)
+                {
+                    _totalDuration = duration;
+                }
+
+                shouldPublish = true;
+            }
+
+            var timeMatch = Regex.Match(line, @"time=(?<time>\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            if (timeMatch.Success && TryParseFfmpegTime(timeMatch.Groups["time"].Value, out var convertedTime))
+            {
+                lock (_gate)
+                {
+                    _convertedTime = convertedTime;
+                }
+
+                shouldPublish = true;
+            }
+
+            var speedMatch = Regex.Match(line, @"speed=\s*(?<speed>\S+)", RegexOptions.IgnoreCase);
+            if (speedMatch.Success)
+            {
+                lock (_gate)
+                {
+                    _speed = speedMatch.Groups["speed"].Value.Trim();
+                }
+
+                shouldPublish = true;
+            }
+
+            if (shouldPublish)
+            {
+                Publish(isComplete: false);
+            }
+        }
+
+        public void UpdateFromProgressLine(string line)
+        {
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                return;
+            }
+
+            var key = line[..separatorIndex];
+            var value = line[(separatorIndex + 1)..].Trim();
+            var shouldPublish = false;
+            var isComplete = false;
+
+            lock (_gate)
+            {
+                switch (key)
+                {
+                    case "out_time_ms":
+                    case "out_time_us":
+                        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microseconds))
+                        {
+                            _convertedTime = TimeSpan.FromTicks(microseconds * 10);
+                            shouldPublish = true;
+                        }
+
+                        break;
+                    case "out_time":
+                        if (TryParseFfmpegTime(value, out var outTime))
+                        {
+                            _convertedTime = outTime;
+                            shouldPublish = true;
+                        }
+
+                        break;
+                    case "speed":
+                        _speed = value;
+                        shouldPublish = true;
+                        break;
+                    case "progress":
+                        shouldPublish = true;
+                        isComplete = value.Equals("end", StringComparison.OrdinalIgnoreCase);
+                        break;
+                }
+            }
+
+            if (shouldPublish)
+            {
+                Publish(isComplete);
+            }
+        }
+
+        private void Publish(bool isComplete)
+        {
+            if (progress is null)
+            {
+                return;
+            }
+
+            TimeSpan? convertedTime;
+            TimeSpan? totalDuration;
+            string speed;
+            lock (_gate)
+            {
+                convertedTime = _convertedTime;
+                totalDuration = _totalDuration;
+                speed = _speed;
+            }
+
+            progress(new FfmpegProgressInfo(convertedTime, totalDuration, speed, isComplete));
+        }
+
+        private static bool TryParseFfmpegTime(string text, out TimeSpan time)
+        {
+            return TimeSpan.TryParseExact(
+                text,
+                [@"h\:mm\:ss\.FFFFFF", @"h\:mm\:ss", @"hh\:mm\:ss\.FFFFFF", @"hh\:mm\:ss"],
+                CultureInfo.InvariantCulture,
+                out time);
         }
     }
 }

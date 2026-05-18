@@ -25,6 +25,15 @@ public partial class MainWindow : Window
     private const string FfmpegUpdateCommand = "winget upgrade Gyan.FFmpeg";
     private const string QueueReorderDragFormat = "NaviMovieMaker.QueueReorder";
     private const string AudioOnlyPresetFolderName = "Audio_MP4_AAC_Only";
+    private const string QueueStatusReady = "待機中";
+    private const string QueueStatusMetadataLoading = "情報取得中...";
+    private const string QueueStatusReadyWithWarning = "注意: 動画情報を取得できませんでした。処理時に再試行します。";
+    private const string QueueStatusUnsupported = "対象外";
+    private const string UnsupportedCurrentModeReason = "現在のモードではこの項目は処理対象外です。";
+    private const string UnsupportedUrlModeReason = "URLはこのモードでは処理対象外です。";
+    private const string UnsupportedLocalFileModeReason = "ローカルファイルはこのモードでは処理対象外です。";
+    private const string UnsupportedFileFormatReason = "対応していないファイル形式です。";
+    private const string UnsafeOnlineUrlReason = "このURLはチャンネルまたはプレイリストの可能性があります。通常モードでは単体動画URLを指定してください。";
     private static readonly HttpClient ThumbnailHttpClient = new();
     private string? _lastQueueSortMemberPath;
     private ListSortDirection _lastQueueSortDirection = ListSortDirection.Ascending;
@@ -49,12 +58,15 @@ public partial class MainWindow : Window
     private string _sessionOutputFolder = string.Empty;
     private ExternalToolResult? _lastYtDlpResult;
     private ExternalToolResult? _lastFfmpegResult;
+    private ExternalToolResult? _lastFfprobeResult;
     private CancellationTokenSource? _downloadCancellationTokenSource;
     private CancellationTokenSource? _queueCancellationTokenSource;
     private Point? _queueDragStartPoint;
     private List<ConversionQueueItem> _draggedQueueItems = [];
     private int _queueProgressProcessed;
     private int _queueProgressTotal;
+    private double _queueProgressValue;
+    private IReadOnlyCollection<ConversionQueueItem> _activeQueueProgressItems = [];
     private int? _activeNumberPrefixStartNumber;
     private bool _isDownloading;
     private bool _isConverting;
@@ -65,6 +77,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = _settingsService.Load(out var settingsWarning);
+        _externalToolService.EnsureToolsFolder();
+        ApplyResolvedToolPathsFromSettings();
         _sessionOutputFolder = _settings.ConvertedFolder;
         LogListBox.ItemsSource = _logEntries;
         VideoListDataGrid.ItemsSource = _videos;
@@ -79,6 +93,7 @@ public partial class MainWindow : Window
 
         PopulateOutputPresetComboBox();
         ApplyPersistedUiOptions();
+        ApplyStartupLayout();
         UpdateDownloadButtonState();
         UpdateConvertButtonState();
         UpdateConvertQueueButtonState();
@@ -89,28 +104,28 @@ public partial class MainWindow : Window
         UpdateNumberPrefixControls();
         UpdateSectionHeaders();
         UpdateMainWorkspaceLayout();
+        ApplyStartupRowLayout();
         _log.Info("Application started.");
         _log.Info("SD card copying and playback order sorting are handled outside NaviMovie-Maker, for example with Explorer and UMSSort.");
+    }
+
+    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        await CheckExternalToolsOnStartupAsync();
     }
 
     private async void CheckExternalToolsMenuItem_Click(object sender, RoutedEventArgs e)
     {
         CheckExternalToolsMenuItem.IsEnabled = false;
         ExternalToolsStatusTextBlock.Text = "External tools: Checking...";
-        _log.Info("Checking external tools from PATH.");
+        _log.Info("Checking external tools from configured paths, tools folder, then PATH.");
 
         try
         {
-            var ytDlpTask = _externalToolService.CheckYtDlpAsync();
-            var ffmpegTask = _externalToolService.CheckFfmpegAsync();
-
-            var ytDlpResult = await ytDlpTask;
-            var ffmpegResult = await ffmpegTask;
-
-            _lastYtDlpResult = ytDlpResult;
-            _lastFfmpegResult = ffmpegResult;
-            LogToolResult(ytDlpResult);
-            LogToolResult(ffmpegResult);
+            var result = await CheckExternalToolsAsync();
+            LogToolResult(result.YtDlp);
+            LogToolResult(result.Ffmpeg);
+            LogToolResult(result.Ffprobe);
             UpdateExternalToolsStatus();
         }
         catch (Exception ex)
@@ -124,7 +139,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SettingsMenuItem_Click(object sender, RoutedEventArgs e)
+    private async void InstallExternalToolsMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        await InstallExternalToolsAsync();
+    }
+
+    private void OpenToolsFolderMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        OpenConfiguredFolder(_externalToolService.ToolsFolder, "tools フォルダ");
+    }
+
+    private async void SettingsMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var settingsWindow = new SettingsWindow(_settings, _settingsService)
         {
@@ -137,12 +162,20 @@ public partial class MainWindow : Window
         }
 
         _settings = settingsWindow.Settings;
+        ApplyResolvedToolPathsFromSettings();
         _sessionOutputFolder = _settings.ConvertedFolder;
         PopulateOutputPresetComboBox();
         SavePersistedUiOptions();
         UpdateDownloadButtonState();
         UpdateConvertButtonState();
         UpdateConvertQueueButtonState();
+        var toolResult = await CheckExternalToolsAsync();
+        UpdateExternalToolsStatus();
+        foreach (var tool in toolResult.Results)
+        {
+            LogToolResult(tool);
+        }
+
         _log.Info($"Settings saved: {_settingsService.SettingsFilePath}");
         _log.Info("Configured folders were created if they did not already exist.");
     }
@@ -169,6 +202,7 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        SaveLastUsedLayoutState();
         SavePersistedUiOptions();
     }
 
@@ -204,6 +238,11 @@ public partial class MainWindow : Window
     {
         var ytDlpInput = BuildVideoSourceInput();
         if (ytDlpInput is null)
+        {
+            return;
+        }
+
+        if (!await EnsureRequiredToolsAsync(requireYtDlp: true, requireFfmpeg: false, "動画情報の取得"))
         {
             return;
         }
@@ -284,7 +323,15 @@ public partial class MainWindow : Window
         }
 
         var originalUrl = urls[0];
-        var normalizedUrl = NormalizeDraggedUrl(originalUrl);
+        var validation = NormalizeSingleVideoUrl(originalUrl);
+        if (!validation.IsAllowed)
+        {
+            _log.Error(validation.Reason);
+            e.Handled = true;
+            return;
+        }
+
+        var normalizedUrl = validation.Url;
         LogDroppedUrlNormalization(originalUrl, normalizedUrl);
 
         if (sender is System.Windows.Controls.TextBox textBox)
@@ -549,6 +596,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!await EnsureRequiredToolsAsync(requireYtDlp: true, requireFfmpeg: false, "ダウンロード"))
+        {
+            return;
+        }
+
         _isDownloading = true;
         _downloadCancellationTokenSource = new CancellationTokenSource();
         SetDownloadState(isDownloading: true);
@@ -649,6 +701,7 @@ public partial class MainWindow : Window
     private void PersistedUiOption_Changed(object sender, RoutedEventArgs e)
     {
         SavePersistedUiOptions();
+        UpdateQueueUnsupportedStatusesForCurrentMode();
     }
 
     private void NumberPrefixTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
@@ -706,6 +759,11 @@ public partial class MainWindow : Window
         if (selectedVideos.Count == 0)
         {
             _log.Error("Select at least one video with an available source file before converting.");
+            return;
+        }
+
+        if (!await EnsureRequiredToolsAsync(requireYtDlp: false, requireFfmpeg: true, "変換"))
+        {
             return;
         }
 
@@ -1213,6 +1271,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        var requiresYtDlp = executionMode is "Download Only" or "Download & Convert";
+        var requiresFfmpeg = executionMode is "Download & Convert" or "Convert Only";
+        if (!await EnsureRequiredToolsAsync(requiresYtDlp, requiresFfmpeg, "キュー実行"))
+        {
+            _log.Warn("必要な外部ツールが不足しているため、キュー実行を開始しませんでした。");
+            return;
+        }
+
         _isQueueConverting = true;
         _queueCancellationTokenSource = new CancellationTokenSource();
         var selectedPreset = GetSelectedConversionPreset();
@@ -1221,11 +1287,19 @@ public partial class MainWindow : Window
             : null;
         var convertedOutputStartNumber = GetNumberPrefixStartNumber();
         _activeNumberPrefixStartNumber = convertedOutputStartNumber;
+        UpdateQueueUnsupportedStatusesForCurrentMode();
         foreach (var item in selectedItems)
         {
+            if (item.IsUnsupported)
+            {
+                continue;
+            }
+
+            ClearQueueProgress(item);
             item.Status = "Pending";
         }
 
+        _activeQueueProgressItems = selectedItems;
         ResetQueueProgress(selectedItems.Count);
         SetQueueConversionState(isConverting: true);
         _log.Info($"Starting queue. Mode: {executionMode}. {selectedItems.Count} selected item(s).");
@@ -1308,6 +1382,18 @@ public partial class MainWindow : Window
                 }
 
                 _log.Info($"Queue item start {item.Order:000}: {item.Title}");
+                if (item.IsUnsupported)
+                {
+                    _log.Info($"Skipping {item.Order:000}: {item.UnsupportedReason}");
+                    RefreshQueueProgressFromStatuses(selectedItems);
+                    continue;
+                }
+
+                if (!EnsureQueueUrlIsSafe(item))
+                {
+                    RefreshQueueProgressFromStatuses(selectedItems);
+                    continue;
+                }
 
                 switch (executionMode)
                 {
@@ -1354,6 +1440,7 @@ public partial class MainWindow : Window
             _queueCancellationTokenSource?.Dispose();
             _queueCancellationTokenSource = null;
             _activeNumberPrefixStartNumber = null;
+            _activeQueueProgressItems = [];
             _isQueueConverting = false;
             SetQueueConversionState(isConverting: false);
             _log.Info("Queue task finished.");
@@ -1366,20 +1453,20 @@ public partial class MainWindow : Window
         _queueCancellationTokenSource?.Cancel();
     }
 
-    private Task RunCopyFilesQueueItemAsync(ConversionQueueItem item, int outputOrder)
+    private async Task RunCopyFilesQueueItemAsync(ConversionQueueItem item, int outputOrder)
     {
         if (item.SourceType == "OnlineVideo")
         {
             item.Status = "Skipped";
             _log.Info($"Skipping {item.Order:000}: Online videos are skipped in Copy Files mode.");
-            return Task.CompletedTask;
+            return;
         }
 
         if (item.SourceType != "LocalFile")
         {
             item.Status = "Skipped";
             _log.Error($"Skipping {item.Order:000}: unsupported queue source type for Copy Files mode: {item.SourceType}");
-            return Task.CompletedTask;
+            return;
         }
 
         var sourcePath = item.SourcePathOrUrl;
@@ -1387,12 +1474,12 @@ public partial class MainWindow : Window
         {
             item.Status = "Failed";
             _log.Error($"Copy failed for queue item {item.Order:000}: source file is missing: {sourcePath}");
-            return Task.CompletedTask;
+            return;
         }
 
         try
         {
-            item.Status = "Copying";
+            SetQueueProgress(item, "コピー中", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
             var outputFolder = GetBaseOutputFolder();
             Directory.CreateDirectory(outputFolder);
             var safeTitle = SafeFileName.Create(item.Title, Path.GetFileNameWithoutExtension(sourcePath));
@@ -1405,18 +1492,18 @@ public partial class MainWindow : Window
 
             _log.Info($"Copy Files output folder: {outputFolder}");
             _log.Info($"Copy source path: {sourcePath}");
-            File.Copy(sourcePath, destinationPath);
+            await CopyFileWithProgressAsync(item, sourcePath, destinationPath);
             item.ConvertedFilePath = destinationPath;
+            ClearQueueProgress(item);
             item.Status = "Completed";
             _log.Info($"Copy destination path: {destinationPath}");
         }
         catch (Exception ex)
         {
+            ClearQueueProgress(item);
             item.Status = "Failed";
             _log.Error($"Copy failed for queue item {item.Order:000}: {item.Title}. {ex.Message}");
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task RunDownloadOnlyQueueItemAsync(
@@ -1449,6 +1536,7 @@ public partial class MainWindow : Window
             cancellationToken);
         if (result.IsCanceled)
         {
+            ClearQueueProgress(item);
             item.Status = "Skipped";
             return;
         }
@@ -1456,11 +1544,13 @@ public partial class MainWindow : Window
         if (result.IsSuccess)
         {
             item.DownloadedFilePath = result.DownloadedFilePath ?? string.Empty;
-            item.Status = "Downloaded";
+            ClearQueueProgress(item);
+            item.Status = "Completed";
             _log.Info($"Download output path: {item.DownloadedFilePath}");
             return;
         }
 
+        ClearQueueProgress(item);
         item.Status = "Failed";
         _log.Error($"Download failed for queue item {item.Order:000}: {item.Title}");
         LogProcessOutput(result.StandardError, "yt-dlp stderr");
@@ -1528,6 +1618,7 @@ public partial class MainWindow : Window
             cancellationToken);
         if (downloadResult.IsCanceled)
         {
+            ClearQueueProgress(item);
             item.Status = "Skipped";
             if (!keepOriginalDownloadedFile && !string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
             {
@@ -1539,6 +1630,7 @@ public partial class MainWindow : Window
 
         if (!downloadResult.IsSuccess || string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
         {
+            ClearQueueProgress(item);
             item.Status = "Failed";
             _log.Error($"Download failed for queue item {item.Order:000}: {item.Title}");
             LogProcessOutput(downloadResult.StandardError, "yt-dlp stderr");
@@ -1552,6 +1644,7 @@ public partial class MainWindow : Window
         }
 
         item.DownloadedFilePath = downloadResult.DownloadedFilePath;
+        ClearQueueProgress(item);
         item.Status = "Downloaded";
         _log.Info(keepOriginalDownloadedFile
             ? $"Original download path: {item.DownloadedFilePath}"
@@ -1574,7 +1667,7 @@ public partial class MainWindow : Window
         bool cleanupFailedDownloadArtifacts,
         CancellationToken cancellationToken)
     {
-        item.Status = "Downloading";
+        SetQueueProgress(item, "ダウンロード中", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
         _log.Info($"Downloading queue item {outputOrder:000}: {item.Title}");
         _log.Info($"Download destination folder: {outputFolder}");
 
@@ -1587,7 +1680,7 @@ public partial class MainWindow : Window
                 return new VideoDownloadResult(false, true, null, string.Empty, "Download canceled.", null);
             }
 
-            item.Status = "Downloading";
+            SetQueueProgress(item, $"ダウンロード中 (試行 {attempt}/{MaxDownloadAttempts})", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
             _log.Info($"yt-dlp download attempt {attempt}/{MaxDownloadAttempts} for: {item.Title}");
 
             lastResult = await _videoDownloadService.DownloadAsync(
@@ -1597,6 +1690,7 @@ public partial class MainWindow : Window
                 message => _log.Info(message),
                 downloadProfile,
                 addNumberPrefix,
+                CreateQueueDownloadProgressHandler(item),
                 cancellationToken);
 
             _log.Info($"yt-dlp attempt {attempt}/{MaxDownloadAttempts} finished for {item.Title}. Exit code: {lastResult.ExitCode?.ToString() ?? "unknown"}");
@@ -1649,6 +1743,28 @@ public partial class MainWindow : Window
         return new VideoDownloadResult(false, false, null, string.Empty, "No download attempts completed.", null);
     }
 
+    private bool EnsureQueueUrlIsSafe(ConversionQueueItem item)
+    {
+        if (item.SourceType != "OnlineVideo")
+        {
+            return true;
+        }
+
+        var validation = NormalizeSingleVideoUrl(item.SourcePathOrUrl);
+        if (validation.IsAllowed && string.Equals(validation.Url, item.SourcePathOrUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        ClearQueueProgress(item);
+        item.Status = "Skipped";
+        item.UnsupportedReason = validation.IsAllowed
+            ? "URLの正規化が必要です。キューへ追加し直してください。"
+            : validation.Reason;
+        _log.Error($"Skipping {item.Order:000}: {item.UnsupportedReason} URL: {item.SourcePathOrUrl}");
+        return false;
+    }
+
     private async Task ConvertQueueItemAsync(
         ConversionQueueItem item,
         string inputFilePath,
@@ -1658,6 +1774,7 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(inputFilePath) || !File.Exists(inputFilePath))
         {
+            ClearQueueProgress(item);
             item.Status = "Failed";
             _log.Error($"Queue item {item.Order:000} source file is missing: {inputFilePath}");
             return;
@@ -1680,7 +1797,7 @@ public partial class MainWindow : Window
         var outputFilePath = PathHelper.GetUniqueFilePath(outputFolder, outputStem, outputExtension);
         LogOutputConflictIfNeeded(outputFolder, outputStem, outputExtension, outputFilePath);
 
-        item.Status = "Converting";
+        SetQueueProgress(item, "変換中", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
         _log.Info($"Converting queue item {outputOrder:000}: {item.Title}");
         _log.Info($"Preset subfolder output enabled: {_settings.CreateSubfolderPerOutputPreset}");
         _log.Info($"Final converted output folder: {outputFolder}");
@@ -1698,6 +1815,7 @@ public partial class MainWindow : Window
         var audioFilter = await BuildAudioFilterAsync(item, inputFilePath, cancellationToken);
         if (audioFilter is null)
         {
+            ClearQueueProgress(item);
             item.Status = cancellationToken.IsCancellationRequested ? "Skipped" : "Failed";
             return;
         }
@@ -1709,6 +1827,7 @@ public partial class MainWindow : Window
                 message => _log.Info(message),
                 preset,
                 audioFilter,
+                CreateQueueConversionProgressHandler(item),
                 cancellationToken)
             : isAudioOnlyInput
             ? await _videoConversionService.ConvertAudioOnlyMp4Async(
@@ -1716,6 +1835,7 @@ public partial class MainWindow : Window
                 outputFilePath,
                 message => _log.Info(message),
                 audioFilter,
+                CreateQueueConversionProgressHandler(item),
                 cancellationToken)
             : await _videoConversionService.ConvertAsync(
                 inputFilePath,
@@ -1724,10 +1844,12 @@ public partial class MainWindow : Window
                 preset,
                 GetSelectedAspectMode(),
                 audioFilter,
+                CreateQueueConversionProgressHandler(item),
                 cancellationToken);
 
         if (cancellationToken.IsCancellationRequested)
         {
+            ClearQueueProgress(item);
             item.Status = "Skipped";
             _log.Info($"Queue conversion canceled for {item.Order:000}: {item.Title}");
             return;
@@ -1736,15 +1858,214 @@ public partial class MainWindow : Window
         if (result.IsSuccess)
         {
             item.ConvertedFilePath = result.OutputFilePath;
+            SetQueueProgress(item, "100%", 100, string.Empty, string.Empty, string.Empty, isIndeterminate: false);
+            ClearQueueProgress(item);
             item.Status = "Converted";
             _log.Info($"Conversion output path: {result.OutputFilePath}");
             return;
         }
 
+        ClearQueueProgress(item);
         item.Status = "Failed";
         _log.Error($"Queue conversion failed for {item.Order:000}: {item.Title}");
         LogProcessOutput(result.StandardError, "ffmpeg stderr");
         LogProcessOutput(result.StandardOutput, "ffmpeg stdout");
+    }
+
+    private Action<FfmpegProgressInfo> CreateQueueConversionProgressHandler(ConversionQueueItem item)
+    {
+        return progress =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (item.Status is "Converted" or "Failed" or "Skipped")
+                {
+                    return;
+                }
+
+                ApplyConversionProgress(item, progress);
+            });
+        };
+    }
+
+    private Action<DownloadProgressInfo> CreateQueueDownloadProgressHandler(ConversionQueueItem item)
+    {
+        return progress =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (item.Status is "Downloaded" or "Failed" or "Skipped")
+                {
+                    return;
+                }
+
+                var progressText = progress.Percent is { } percent
+                    ? $"{Math.Clamp(percent, 0, 100):0.0}%"
+                    : string.Empty;
+                var detailText = string.IsNullOrWhiteSpace(progress.Detail) ? string.Empty : progress.Detail;
+                var speedText = string.IsNullOrWhiteSpace(progress.Speed) ? string.Empty : progress.Speed;
+                var etaText = string.IsNullOrWhiteSpace(progress.Eta) ? string.Empty : $"残り {progress.Eta}";
+                SetQueueProgress(item, "ダウンロード中", progress.Percent, progressText, detailText, speedText, etaText, progress.Percent is null);
+            });
+        };
+    }
+
+    private static void ApplyConversionProgress(ConversionQueueItem item, FfmpegProgressInfo progress)
+    {
+        if (progress.ConvertedTime is null)
+        {
+            SetQueueProgress(item, "変換中", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
+            return;
+        }
+
+        var convertedText = FormatProgressTime(progress.ConvertedTime.Value);
+        var speedText = string.IsNullOrWhiteSpace(progress.Speed) || progress.Speed.Equals("N/A", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : $"speed {progress.Speed}";
+
+        if (progress.TotalDuration is not { TotalSeconds: > 0 } totalDuration)
+        {
+            SetQueueProgress(item, "変換中", null, string.Empty, convertedText, speedText, string.Empty, isIndeterminate: true);
+            return;
+        }
+
+        var boundedConvertedSeconds = Math.Clamp(progress.ConvertedTime.Value.TotalSeconds, 0, totalDuration.TotalSeconds);
+        var percent = Math.Clamp(
+            Math.Round(boundedConvertedSeconds * 100.0 / totalDuration.TotalSeconds),
+            0,
+            progress.IsComplete ? 100 : 99);
+        var totalText = FormatProgressTime(totalDuration);
+        var etaText = TryGetProgressSpeed(progress.Speed, out var speed)
+            ? FormatEta(totalDuration.TotalSeconds - boundedConvertedSeconds, speed)
+            : string.Empty;
+
+        SetQueueProgress(
+            item,
+            "変換中",
+            percent,
+            $"{percent:0}%",
+            $"{convertedText} / {totalText}",
+            speedText,
+            etaText,
+            isIndeterminate: false);
+    }
+
+    private static void SetQueueProgress(
+        ConversionQueueItem item,
+        string status,
+        double? percent,
+        string progressText,
+        string detailText,
+        string speedText,
+        string etaText = "",
+        bool isIndeterminate = false)
+    {
+        item.Status = status;
+        item.ProgressPercent = percent;
+        item.ProgressText = progressText;
+        item.DetailText = detailText;
+        item.SpeedText = speedText;
+        item.EtaText = etaText;
+        item.IsIndeterminate = isIndeterminate;
+    }
+
+    private static void ClearQueueProgress(ConversionQueueItem item)
+    {
+        item.ProgressPercent = null;
+        item.ProgressText = string.Empty;
+        item.DetailText = string.Empty;
+        item.SpeedText = string.Empty;
+        item.EtaText = string.Empty;
+        item.IsIndeterminate = false;
+    }
+
+    private static async Task CopyFileWithProgressAsync(
+        ConversionQueueItem item,
+        string sourcePath,
+        string destinationPath)
+    {
+        const int bufferSize = 1024 * 1024;
+        var totalBytes = new FileInfo(sourcePath).Length;
+        var copiedBytes = 0L;
+        var buffer = new byte[bufferSize];
+
+        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
+        await using var destination = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
+
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer);
+            if (read == 0)
+            {
+                break;
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, read));
+            copiedBytes += read;
+            if (totalBytes > 0)
+            {
+                var percent = Math.Clamp(copiedBytes * 100.0 / totalBytes, 0, 100);
+                SetQueueProgress(
+                    item,
+                    "コピー中",
+                    percent,
+                    $"{percent:0}%",
+                    $"{FormatBytes(copiedBytes)} / {FormatBytes(totalBytes)}",
+                    string.Empty,
+                    string.Empty,
+                    isIndeterminate: false);
+            }
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        var value = (double)bytes;
+        var unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.Length - 1)
+        {
+            value /= 1024;
+            unitIndex++;
+        }
+
+        return $"{value:0.#}{units[unitIndex]}";
+    }
+
+    private static string FormatProgressTime(TimeSpan time)
+    {
+        return time.TotalHours >= 1
+            ? time.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)
+            : time.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryGetProgressSpeed(string speedText, out double speed)
+    {
+        speed = 0;
+        if (string.IsNullOrWhiteSpace(speedText))
+        {
+            return false;
+        }
+
+        var normalizedSpeed = speedText.Trim().TrimEnd('x');
+        return double.TryParse(normalizedSpeed, NumberStyles.Float, CultureInfo.InvariantCulture, out speed)
+            && speed > 0.01;
+    }
+
+    private static string FormatEta(double remainingSeconds, double speed)
+    {
+        if (remainingSeconds <= 0)
+        {
+            return "残り 約0分";
+        }
+
+        var eta = TimeSpan.FromSeconds(remainingSeconds / speed);
+        if (eta.TotalHours >= 1)
+        {
+            return $"残り 約{Math.Ceiling(eta.TotalHours):0}時間";
+        }
+
+        return $"残り 約{Math.Max(1, Math.Ceiling(eta.TotalMinutes)):0}分";
     }
 
     private bool EnsureFoldersForQueueMode(string executionMode)
@@ -1901,6 +2222,7 @@ public partial class MainWindow : Window
         _settings.KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true;
         _settings.PeakBoost = PeakBoostCheckBox.IsChecked == true;
         _settings.TargetPeakDb = GetSelectedTargetPeakDb();
+        SaveLastUsedLayoutState();
 
         try
         {
@@ -1910,6 +2232,126 @@ public partial class MainWindow : Window
         {
             _log.Error($"UI options could not be saved. {ex.Message}");
         }
+    }
+
+    private void ApplyStartupLayout()
+    {
+        switch (_settings.StartupLayout)
+        {
+            case "Standard":
+                CandidatesExpander.IsExpanded = true;
+                ConversionQueueExpander.IsExpanded = true;
+                LogExpander.IsExpanded = false;
+                break;
+            case "BrowserFocus":
+                CandidatesExpander.IsExpanded = true;
+                ConversionQueueExpander.IsExpanded = true;
+                LogExpander.IsExpanded = false;
+                break;
+            case "LastUsed":
+                ApplyLastUsedWindowSize();
+                CandidatesExpander.IsExpanded = _settings.LastCandidatesExpanded;
+                ConversionQueueExpander.IsExpanded = true;
+                LogExpander.IsExpanded = _settings.LastLogExpanded;
+                break;
+            case "QueueFocus":
+            default:
+                CandidatesExpander.IsExpanded = false;
+                ConversionQueueExpander.IsExpanded = true;
+                LogExpander.IsExpanded = true;
+                break;
+        }
+    }
+
+    private void ApplyStartupRowLayout()
+    {
+        switch (_settings.StartupLayout)
+        {
+            case "BrowserFocus":
+                if (CandidatesExpander.IsExpanded)
+                {
+                    VideoListWorkRow.Height = new GridLength(2, GridUnitType.Star);
+                }
+
+                if (ConversionQueueExpander.IsExpanded)
+                {
+                    QueueWorkRow.Height = new GridLength(1, GridUnitType.Star);
+                }
+
+                break;
+            case "LastUsed":
+                ApplyLastUsedRowHeights();
+                break;
+            case "QueueFocus":
+            default:
+                if (ConversionQueueExpander.IsExpanded)
+                {
+                    QueueWorkRow.Height = new GridLength(3, GridUnitType.Star);
+                }
+
+                if (LogExpander.IsExpanded)
+                {
+                    LogWorkRow.Height = new GridLength(1, GridUnitType.Star);
+                }
+
+                break;
+        }
+    }
+
+    private void ApplyLastUsedWindowSize()
+    {
+        if (_settings.LastWindowWidth >= MinWidth)
+        {
+            Width = _settings.LastWindowWidth;
+        }
+
+        if (_settings.LastWindowHeight >= MinHeight)
+        {
+            Height = _settings.LastWindowHeight;
+        }
+    }
+
+    private void ApplyLastUsedRowHeights()
+    {
+        if (CandidatesExpander.IsExpanded && _settings.LastVideoListRowHeight > 0)
+        {
+            VideoListWorkRow.Height = new GridLength(_settings.LastVideoListRowHeight);
+        }
+
+        if (ConversionQueueExpander.IsExpanded && _settings.LastQueueRowHeight > 0)
+        {
+            QueueWorkRow.Height = new GridLength(_settings.LastQueueRowHeight);
+        }
+
+        if (LogExpander.IsExpanded && _settings.LastLogRowHeight > 0)
+        {
+            LogWorkRow.Height = new GridLength(_settings.LastLogRowHeight);
+        }
+    }
+
+    private void SaveLastUsedLayoutState()
+    {
+        if (_settings is null
+            || CandidatesExpander is null
+            || LogExpander is null
+            || VideoListWorkRow is null
+            || QueueWorkRow is null
+            || LogWorkRow is null)
+        {
+            return;
+        }
+
+        _settings.LastCandidatesExpanded = CandidatesExpander.IsExpanded;
+        _settings.LastLogExpanded = LogExpander.IsExpanded;
+        if (WindowState == WindowState.Normal)
+        {
+            _settings.LastWindowWidth = Width;
+            _settings.LastWindowHeight = Height;
+        }
+
+        _settings.LastVideoListRowHeight = Math.Max(0, VideoListWorkRow.ActualHeight);
+        _settings.LastQueueRowHeight = Math.Max(0, QueueWorkRow.ActualHeight);
+        _settings.LastLogRowHeight = Math.Max(0, LogWorkRow.ActualHeight);
     }
 
     private static void SelectComboBoxItemByContent(
@@ -2218,6 +2660,171 @@ public partial class MainWindow : Window
         UpdateMainWorkspaceLayout();
     }
 
+    private async Task CheckExternalToolsOnStartupAsync()
+    {
+        var result = await CheckExternalToolsAsync();
+        foreach (var tool in result.Results)
+        {
+            LogToolResult(tool);
+        }
+
+        UpdateExternalToolsStatus();
+        if (result.IsReady)
+        {
+            return;
+        }
+
+        var dialogResult = MessageBox.Show(
+            this,
+            "yt-dlp または FFmpeg が見つかりません。\nダウンロードや変換を行うには外部ツールが必要です。\n\nはい: 自動取得する\nいいえ: 手動で指定する\nキャンセル: 後で行う",
+            "外部ツールが必要です",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning);
+
+        if (dialogResult == MessageBoxResult.Yes)
+        {
+            await InstallExternalToolsAsync();
+        }
+        else if (dialogResult == MessageBoxResult.No)
+        {
+            SettingsMenuItem_Click(SettingsMenuItem, new RoutedEventArgs());
+        }
+    }
+
+    private async Task<ExternalToolCheckResult> CheckExternalToolsAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await _externalToolService.CheckAllAsync(_settings, cancellationToken);
+        _lastYtDlpResult = result.YtDlp;
+        _lastFfmpegResult = result.Ffmpeg;
+        _lastFfprobeResult = result.Ffprobe;
+        ApplyResolvedToolPaths(result);
+        return result;
+    }
+
+    private async Task<bool> EnsureRequiredToolsAsync(bool requireYtDlp, bool requireFfmpeg, string title)
+    {
+        var result = await CheckExternalToolsAsync();
+        UpdateExternalToolsStatus();
+
+        var missingTools = new List<string>();
+        if (requireYtDlp && !result.YtDlp.IsAvailable)
+        {
+            missingTools.Add("yt-dlp");
+        }
+
+        if (requireFfmpeg && !result.Ffmpeg.IsAvailable)
+        {
+            missingTools.Add("ffmpeg");
+        }
+
+        if (requireFfmpeg && !result.Ffprobe.IsAvailable)
+        {
+            missingTools.Add("ffprobe");
+        }
+
+        if (missingTools.Count == 0)
+        {
+            return true;
+        }
+
+        var dialogResult = MessageBox.Show(
+            this,
+            $"必要な外部ツールが見つかりません: {string.Join(", ", missingTools)}\n\nはい: 自動取得する\nいいえ: 手動で指定する\nキャンセル: 中止",
+            title,
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning);
+        if (dialogResult == MessageBoxResult.Yes)
+        {
+            return await InstallExternalToolsAsync() && await EnsureRequiredToolsAsync(requireYtDlp, requireFfmpeg, title);
+        }
+
+        if (dialogResult == MessageBoxResult.No)
+        {
+            SettingsMenuItem_Click(SettingsMenuItem, new RoutedEventArgs());
+        }
+
+        return false;
+    }
+
+    private async Task<bool> InstallExternalToolsAsync()
+    {
+        InstallExternalToolsMenuItem.IsEnabled = false;
+        CheckExternalToolsMenuItem.IsEnabled = false;
+        try
+        {
+            _log.Info("外部ツールの自動取得を開始します。");
+            var progress = new Progress<string>(message =>
+            {
+                ExternalToolsStatusTextBlock.Text = message;
+                _log.Info(message);
+            });
+
+            await _externalToolService.InstallToolsAsync(_settings, message => _log.Info(message), progress);
+            var result = await CheckExternalToolsAsync();
+            foreach (var tool in result.Results)
+            {
+                LogToolResult(tool);
+            }
+
+            UpdateExternalToolsStatus();
+            if (result.IsReady)
+            {
+                _log.Success("外部ツールの自動取得が完了しました。");
+                MessageBox.Show(this, "外部ツールの準備が完了しました。", "外部ツール", MessageBoxButton.OK, MessageBoxImage.Information);
+                return true;
+            }
+
+            MessageBox.Show(this, "取得後の確認で不足しているツールがあります。ログを確認してください。", "外部ツール", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"外部ツールの自動取得に失敗しました。{ex.Message}");
+            MessageBox.Show(this, $"外部ツールの自動取得に失敗しました。\n{ex.Message}", "外部ツール取得エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+        finally
+        {
+            InstallExternalToolsMenuItem.IsEnabled = true;
+            CheckExternalToolsMenuItem.IsEnabled = !_isDownloading && !_isConverting && !_isQueueConverting;
+        }
+    }
+
+    private void ApplyResolvedToolPathsFromSettings()
+    {
+        if (File.Exists(_settings.YtDlpPath))
+        {
+            _videoDownloadService.YtDlpPath = _settings.YtDlpPath;
+            _videoMetadataService.YtDlpPath = _settings.YtDlpPath;
+        }
+
+        if (File.Exists(_settings.FfmpegPath))
+        {
+            _videoConversionService.FfmpegPath = _settings.FfmpegPath;
+        }
+    }
+
+    private void ApplyResolvedToolPaths(ExternalToolCheckResult result)
+    {
+        if (result.YtDlp.IsAvailable && !string.IsNullOrWhiteSpace(result.YtDlp.ExecutablePath))
+        {
+            _videoDownloadService.YtDlpPath = result.YtDlp.ExecutablePath;
+            _videoMetadataService.YtDlpPath = result.YtDlp.ExecutablePath;
+            _log.Info($"Using yt-dlp executable: {result.YtDlp.ExecutablePath}");
+        }
+
+        if (result.Ffmpeg.IsAvailable && !string.IsNullOrWhiteSpace(result.Ffmpeg.ExecutablePath))
+        {
+            _videoConversionService.FfmpegPath = result.Ffmpeg.ExecutablePath;
+            _log.Info($"Using ffmpeg executable: {result.Ffmpeg.ExecutablePath}");
+        }
+
+        if (result.Ffprobe.IsAvailable && !string.IsNullOrWhiteSpace(result.Ffprobe.ExecutablePath))
+        {
+            _log.Info($"Using ffprobe executable: {result.Ffprobe.ExecutablePath}");
+        }
+    }
+
     private void LogToolResult(ExternalToolResult result)
     {
         if (result.IsAvailable)
@@ -2232,7 +2839,7 @@ public partial class MainWindow : Window
 
     private void UpdateExternalToolsStatus()
     {
-        if (_lastYtDlpResult is null || _lastFfmpegResult is null)
+        if (_lastYtDlpResult is null || _lastFfmpegResult is null || _lastFfprobeResult is null)
         {
             ExternalToolsStatusTextBlock.Text = "External tools: Check required";
             return;
@@ -2247,6 +2854,11 @@ public partial class MainWindow : Window
         if (!_lastFfmpegResult.IsAvailable)
         {
             missingTools.Add("ffmpeg");
+        }
+
+        if (!_lastFfprobeResult.IsAvailable)
+        {
+            missingTools.Add("ffprobe");
         }
 
         ExternalToolsStatusTextBlock.Text = missingTools.Count == 0
@@ -2323,6 +2935,7 @@ public partial class MainWindow : Window
     private void SetDownloadState(bool isDownloading)
     {
         CheckExternalToolsMenuItem.IsEnabled = !isDownloading;
+        InstallExternalToolsMenuItem.IsEnabled = !isDownloading;
         SettingsMenuItem.IsEnabled = !isDownloading;
         FetchVideoListButton.IsEnabled = !isDownloading;
         DirectUrlModeRadioButton.IsEnabled = !isDownloading;
@@ -2365,6 +2978,7 @@ public partial class MainWindow : Window
     private void SetConversionState(bool isConverting)
     {
         CheckExternalToolsMenuItem.IsEnabled = !isConverting;
+        InstallExternalToolsMenuItem.IsEnabled = !isConverting;
         SettingsMenuItem.IsEnabled = !isConverting;
         FetchVideoListButton.IsEnabled = !isConverting;
         DirectUrlModeRadioButton.IsEnabled = !isConverting;
@@ -2405,6 +3019,7 @@ public partial class MainWindow : Window
     private void SetQueueConversionState(bool isConverting)
     {
         CheckExternalToolsMenuItem.IsEnabled = !isConverting;
+        InstallExternalToolsMenuItem.IsEnabled = !isConverting;
         SettingsMenuItem.IsEnabled = !isConverting;
         FetchVideoListButton.IsEnabled = !isConverting;
         DirectUrlModeRadioButton.IsEnabled = !isConverting;
@@ -2475,6 +3090,7 @@ public partial class MainWindow : Window
     {
         _queueProgressTotal = Math.Max(0, total);
         _queueProgressProcessed = 0;
+        _queueProgressValue = 0;
         UpdateQueueProgressDisplay();
     }
 
@@ -2482,6 +3098,7 @@ public partial class MainWindow : Window
     {
         _queueProgressTotal = 0;
         _queueProgressProcessed = 0;
+        _queueProgressValue = 0;
         UpdateQueueProgressDisplay();
     }
 
@@ -2492,7 +3109,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        _queueProgressProcessed = Math.Min(queueItems.Count(IsProcessedQueueStatus), _queueProgressTotal);
+        var completedCount = Math.Min(queueItems.Count(IsProcessedQueueStatus), _queueProgressTotal);
+        var activePartial = queueItems
+            .Where(static item => !IsProcessedQueueStatus(item))
+            .Select(static item => Math.Clamp((item.ProgressPercent ?? 0) / 100.0, 0, 0.999))
+            .DefaultIfEmpty(0)
+            .Max();
+
+        _queueProgressProcessed = completedCount;
+        _queueProgressValue = Math.Min(completedCount + activePartial, _queueProgressTotal);
         UpdateQueueProgressDisplay();
     }
 
@@ -2504,7 +3129,7 @@ public partial class MainWindow : Window
         }
 
         QueueProgressBar.Maximum = _queueProgressTotal > 0 ? _queueProgressTotal : 1;
-        QueueProgressBar.Value = Math.Min(_queueProgressProcessed, QueueProgressBar.Maximum);
+        QueueProgressBar.Value = Math.Min(_queueProgressValue, QueueProgressBar.Maximum);
         QueueProgressTextBlock.Text = _queueProgressTotal > 0
             ? $"{_queueProgressProcessed}/{_queueProgressTotal}  {GetQueueProgressPercent()}%"
             : "準備完了";
@@ -2514,13 +3139,13 @@ public partial class MainWindow : Window
     private int GetQueueProgressPercent()
     {
         return _queueProgressTotal > 0
-            ? (int)Math.Round(_queueProgressProcessed * 100.0 / _queueProgressTotal)
+            ? (int)Math.Round(_queueProgressValue * 100.0 / _queueProgressTotal)
             : 0;
     }
 
     private static bool IsProcessedQueueStatus(ConversionQueueItem item)
     {
-        return item.Status is "Converted" or "Downloaded" or "Completed" or "Failed" or "Skipped";
+        return item.Status is "Converted" or "Downloaded" or "Completed" or "Failed" or "Skipped" or QueueStatusUnsupported;
     }
 
     private void UpdateMainWorkspaceLayout()
@@ -2580,8 +3205,22 @@ public partial class MainWindow : Window
             return null;
         }
 
-        _log.Info($"Loading video list from URL: {url}");
-        return url;
+        var validation = NormalizeSingleVideoUrl(url);
+        if (!validation.IsAllowed)
+        {
+            _log.Error(validation.Reason);
+            return null;
+        }
+
+        if (!string.Equals(url, validation.Url, StringComparison.Ordinal))
+        {
+            UrlTextBox.Text = validation.Url;
+            UrlTextBox.CaretIndex = UrlTextBox.Text.Length;
+            _log.Info($"Normalized URL input: {validation.Url}");
+        }
+
+        _log.Info($"Loading video list from URL: {validation.Url}");
+        return validation.Url;
     }
 
     private int GetSearchResultCount()
@@ -2730,18 +3369,21 @@ public partial class MainWindow : Window
         var duplicateCount = 0;
         var fallbackCount = 0;
         var droppedUrls = urls
-            .Select(originalUrl => new
-            {
-                OriginalUrl = originalUrl,
-                NormalizedUrl = NormalizeDraggedUrl(originalUrl),
-            })
-            .GroupBy(url => url.NormalizedUrl, StringComparer.OrdinalIgnoreCase)
+            .Select(originalUrl => new { OriginalUrl = originalUrl, Validation = NormalizeSingleVideoUrl(originalUrl) })
+            .GroupBy(url => url.Validation.Url, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToList();
+        var pendingMetadataItems = new List<(ConversionQueueItem QueueItem, string NormalizedUrl)>();
 
         foreach (var droppedUrl in droppedUrls)
         {
-            var normalizedUrl = droppedUrl.NormalizedUrl;
+            if (!droppedUrl.Validation.IsAllowed)
+            {
+                _log.Error(droppedUrl.Validation.Reason);
+                continue;
+            }
+
+            var normalizedUrl = droppedUrl.Validation.Url;
             LogDroppedUrlNormalization(droppedUrl.OriginalUrl, normalizedUrl);
 
             if (QueueContainsSource(normalizedUrl))
@@ -2751,34 +3393,43 @@ public partial class MainWindow : Window
                 continue;
             }
 
+            var queueItem = new ConversionQueueItem
+            {
+                SourceType = "OnlineVideo",
+                Title = "読み込み中...",
+                SourcePathOrUrl = normalizedUrl,
+                Status = QueueStatusMetadataLoading,
+            };
+            _conversionQueue.Add(queueItem);
+            addedCount++;
+            pendingMetadataItems.Add((queueItem, normalizedUrl));
+            ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+            _log.Info($"Added dropped URL to queue for metadata loading: {normalizedUrl}");
+        }
+
+        RefreshQueueOrderNumbers();
+
+        foreach (var (queueItem, normalizedUrl) in pendingMetadataItems)
+        {
             var video = await FetchDroppedUrlMetadataAsync(normalizedUrl);
             if (video is null)
             {
                 fallbackCount++;
                 var fallbackTitle = CreateFallbackOnlineVideoTitle(normalizedUrl);
                 _log.Warn($"Using fallback title for dropped URL: {fallbackTitle}");
-                video = new VideoListItem
-                {
-                    IsSelected = true,
-                    Title = fallbackTitle,
-                    Url = normalizedUrl,
-                    SourcePath = normalizedUrl,
-                    SourceType = GetOnlineSourceType(normalizedUrl),
-                    Status = "Pending",
-                };
+                queueItem.Title = fallbackTitle;
+                queueItem.Status = QueueStatusReadyWithWarning;
+                ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+                _log.Info($"Dropped URL metadata fallback is ready: {normalizedUrl}");
+                continue;
             }
 
-            _conversionQueue.Add(new ConversionQueueItem
-            {
-                SourceType = "OnlineVideo",
-                Title = string.IsNullOrWhiteSpace(video.Title)
-                    ? CreateFallbackOnlineVideoTitle(normalizedUrl)
-                    : video.Title,
-                SourcePathOrUrl = normalizedUrl,
-                Status = "Pending",
-            });
-            addedCount++;
-            _log.Info($"Added dropped URL to queue: {normalizedUrl}");
+            queueItem.Title = string.IsNullOrWhiteSpace(video.Title)
+                ? CreateFallbackOnlineVideoTitle(normalizedUrl)
+                : video.Title;
+            queueItem.Status = QueueStatusReady;
+            ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+            _log.Info($"Dropped URL metadata resolved: {queueItem.Title}");
         }
 
         RefreshQueueOrderNumbers();
@@ -2828,20 +3479,13 @@ public partial class MainWindow : Window
         return SafeFileName.Create(fallback, "Online Video");
     }
 
-    private static string GetOnlineSourceType(string url)
-    {
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
-            ? uri.Host
-            : "OnlineVideo";
-    }
-
-    private static string NormalizeDraggedUrl(string text)
+    private static UrlValidationResult NormalizeSingleVideoUrl(string text)
     {
         var originalText = text.Trim();
         if (!Uri.TryCreate(originalText, UriKind.Absolute, out var uri)
             || uri.Scheme is not ("http" or "https"))
         {
-            return text;
+            return UrlValidationResult.Allowed(text);
         }
 
         var host = uri.Host.ToLowerInvariant();
@@ -2849,20 +3493,44 @@ public partial class MainWindow : Window
         {
             var videoId = GetLastPathSegment(uri);
             return string.IsNullOrWhiteSpace(videoId)
-                ? text
-                : BuildYouTubeWatchUrl(videoId);
+                ? UrlValidationResult.Rejected(text, UnsafeOnlineUrlReason)
+                : UrlValidationResult.Allowed(BuildYouTubeWatchUrl(videoId));
         }
 
-        if (!IsYouTubeHost(host)
-            || !string.Equals(uri.AbsolutePath, "/watch", StringComparison.OrdinalIgnoreCase))
+        if (!IsYouTubeHost(host))
         {
-            return text;
+            return UrlValidationResult.Allowed(text);
         }
 
-        var queryValues = ParseQueryValues(uri.Query);
-        return queryValues.TryGetValue("v", out var watchVideoId) && !string.IsNullOrWhiteSpace(watchVideoId)
-            ? BuildYouTubeWatchUrl(watchVideoId)
-            : text;
+        var path = uri.AbsolutePath.Trim('/');
+        if (string.Equals(uri.AbsolutePath, "/watch", StringComparison.OrdinalIgnoreCase))
+        {
+            var queryValues = ParseQueryValues(uri.Query);
+            return queryValues.TryGetValue("v", out var watchVideoId) && !string.IsNullOrWhiteSpace(watchVideoId)
+                ? UrlValidationResult.Allowed(BuildYouTubeWatchUrl(watchVideoId))
+                : UrlValidationResult.Rejected(text, UnsafeOnlineUrlReason);
+        }
+
+        if (path.StartsWith("shorts/", StringComparison.OrdinalIgnoreCase))
+        {
+            var videoId = path.Split('/', StringSplitOptions.RemoveEmptyEntries).Skip(1).FirstOrDefault();
+            return string.IsNullOrWhiteSpace(videoId)
+                ? UrlValidationResult.Rejected(text, UnsafeOnlineUrlReason)
+                : UrlValidationResult.Allowed(BuildYouTubeWatchUrl(videoId));
+        }
+
+        if (path.Equals("playlist", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("channel/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("@", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("c/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("user/", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("radio", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("radio/", StringComparison.OrdinalIgnoreCase))
+        {
+            return UrlValidationResult.Rejected(text, UnsafeOnlineUrlReason);
+        }
+
+        return UrlValidationResult.Rejected(text, UnsafeOnlineUrlReason);
     }
 
     private static string? TryGetYouTubeVideoId(Uri uri)
@@ -2898,6 +3566,19 @@ public partial class MainWindow : Window
     private static string BuildYouTubeWatchUrl(string videoId)
     {
         return $"https://www.youtube.com/watch?v={Uri.EscapeDataString(Uri.UnescapeDataString(videoId))}";
+    }
+
+    private sealed record UrlValidationResult(bool IsAllowed, string Url, string Reason)
+    {
+        public static UrlValidationResult Allowed(string url)
+        {
+            return new UrlValidationResult(true, url, string.Empty);
+        }
+
+        public static UrlValidationResult Rejected(string url, string reason)
+        {
+            return new UrlValidationResult(false, url, reason);
+        }
     }
 
     private static Dictionary<string, string> ParseQueryValues(string query)
@@ -3002,33 +3683,98 @@ public partial class MainWindow : Window
         return preview.Length <= 120 ? preview : $"{preview[..120]}...";
     }
 
+    private void UpdateQueueUnsupportedStatusesForCurrentMode()
+    {
+        if (_isQueueConverting || QueueExecutionModeComboBox is null)
+        {
+            return;
+        }
+
+        var executionMode = GetQueueExecutionMode();
+        foreach (var item in _conversionQueue)
+        {
+            if (IsIdleQueueStatus(item.Status))
+            {
+                ApplyQueueSupportStatus(item, executionMode);
+            }
+        }
+    }
+
+    private static void ApplyQueueSupportStatus(ConversionQueueItem item, string executionMode)
+    {
+        var reason = GetUnsupportedReason(item, executionMode);
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            item.UnsupportedReason = reason;
+            item.Status = QueueStatusUnsupported;
+            return;
+        }
+
+        item.UnsupportedReason = string.Empty;
+        if (item.Status is "Pending" or QueueStatusUnsupported)
+        {
+            item.Status = QueueStatusReady;
+        }
+    }
+
+    private static string GetUnsupportedReason(ConversionQueueItem item, string executionMode)
+    {
+        if (item.SourceType == "Unsupported")
+        {
+            return string.IsNullOrWhiteSpace(item.UnsupportedReason)
+                ? UnsupportedCurrentModeReason
+                : item.UnsupportedReason;
+        }
+
+        return executionMode switch
+        {
+            "Download Only" when item.SourceType == "LocalFile" => UnsupportedLocalFileModeReason,
+            "Convert Only" when item.SourceType == "OnlineVideo" => UnsupportedUrlModeReason,
+            "Copy Files" when item.SourceType == "OnlineVideo" => UnsupportedUrlModeReason,
+            _ => string.Empty,
+        };
+    }
+
+    private static bool IsIdleQueueStatus(string status)
+    {
+        return status is "Pending"
+            or QueueStatusReady
+            or QueueStatusMetadataLoading
+            or QueueStatusReadyWithWarning
+            or QueueStatusUnsupported;
+    }
+
     private void AddLocalFilesToQueue(IEnumerable<string> paths, string sourceLabel)
     {
         var addedCount = 0;
         var unsupportedCount = 0;
         var duplicateCount = 0;
         var ignoredFolderCount = 0;
+        var executionMode = GetQueueExecutionMode();
 
         foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (Directory.Exists(path))
             {
                 ignoredFolderCount++;
-                _log.Info($"Skipped folder drop. Folder scanning is not enabled in this version: {path}");
+                AddUnsupportedDroppedItem(path, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), UnsupportedFileFormatReason);
+                _log.Info($"Added unsupported folder drop to queue. Folder scanning is not enabled in this version: {path}");
                 continue;
             }
 
             if (!File.Exists(path))
             {
                 unsupportedCount++;
-                _log.Error($"Skipped missing file: {path}");
+                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason);
+                _log.Error($"Added missing dropped file to queue as unsupported: {path}");
                 continue;
             }
 
             if (!IsSupportedLocalVideoFile(path))
             {
                 unsupportedCount++;
-                _log.Info($"Skipped unsupported file: {path}");
+                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason);
+                _log.Info($"Added unsupported file to queue: {path}");
                 continue;
             }
 
@@ -3044,14 +3790,33 @@ public partial class MainWindow : Window
                 SourceType = "LocalFile",
                 Title = Path.GetFileNameWithoutExtension(path),
                 SourcePathOrUrl = path,
-                Status = "Pending",
+                Status = QueueStatusReady,
             });
+            ApplyQueueSupportStatus(_conversionQueue[^1], executionMode);
             addedCount++;
             _log.Info($"Added local file to queue: {path}");
         }
 
         RefreshQueueOrderNumbers();
         _log.Info($"Added {addedCount} local file(s) to the conversion queue from {sourceLabel}. Skipped {unsupportedCount} unsupported/missing, {duplicateCount} duplicate, {ignoredFolderCount} folder item(s).");
+    }
+
+    private void AddUnsupportedDroppedItem(string sourcePathOrUrl, string title, string reason)
+    {
+        if (QueueContainsSource(sourcePathOrUrl))
+        {
+            _log.Info($"Skipped duplicate unsupported queue item: {sourcePathOrUrl}");
+            return;
+        }
+
+        _conversionQueue.Add(new ConversionQueueItem
+        {
+            SourceType = "Unsupported",
+            Title = string.IsNullOrWhiteSpace(title) ? "対象外の項目" : title,
+            SourcePathOrUrl = sourcePathOrUrl,
+            Status = QueueStatusUnsupported,
+            UnsupportedReason = reason,
+        });
     }
 
     private bool QueueContainsSource(string sourcePathOrUrl)
@@ -3064,28 +3829,13 @@ public partial class MainWindow : Window
     {
         if (result.IsAvailable)
         {
-            var updateCommand = result.ToolName.Equals("yt-dlp", StringComparison.OrdinalIgnoreCase)
-                ? YtDlpUpdateCommand
-                : FfmpegUpdateCommand;
-
-            return string.Join(
-                Environment.NewLine,
-                result.Message,
-                $"Update command: {updateCommand}");
+            return result.Message;
         }
 
-        return result.ToolName.Equals("yt-dlp", StringComparison.OrdinalIgnoreCase)
-            ? string.Join(
-                Environment.NewLine,
-                "yt-dlp was not found in PATH.",
-                $"Suggested install command: {YtDlpInstallCommand}",
-                $"Update command after install: {YtDlpUpdateCommand}")
-            : string.Join(
-                Environment.NewLine,
-                "ffmpeg was not found in PATH.",
-                $"Suggested search command: {FfmpegSearchCommand}",
-                $"Suggested install command: {FfmpegInstallCommand}",
-                $"Update command after install: {FfmpegUpdateCommand}");
+        return string.Join(
+            Environment.NewLine,
+            result.Message,
+            "設定画面で手動指定するか、メニューの「外部ツールを自動取得」を実行してください。");
     }
 
     private void CopyCommandToClipboard(string command)
@@ -3165,6 +3915,13 @@ public partial class MainWindow : Window
             or nameof(ConversionQueueItem.SourcePathOrUrl))
         {
             UpdateConvertQueueButtonState();
+        }
+
+        if (_isQueueConverting
+            && (e.PropertyName is nameof(ConversionQueueItem.ProgressPercent)
+                or nameof(ConversionQueueItem.Status)))
+        {
+            RefreshQueueProgressFromStatuses(_activeQueueProgressItems.Count > 0 ? _activeQueueProgressItems : _conversionQueue);
         }
     }
 

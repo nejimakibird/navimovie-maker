@@ -124,10 +124,37 @@
 
             <TabItem Header="出力 / 変換">
                 <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="280" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <CheckBox x:Name="CreatePresetSubfolderCheckBox"
+                              Grid.Row="0"
+                              Grid.ColumnSpan="3"
                               Content="出力形式ごとにサブフォルダを作成"
                               ToolTip="出力形式ごとのフォルダに分けて保存します。"
-                              VerticalAlignment="Top" />
+                              VerticalAlignment="Top"
+                              Margin="0,0,0,14" />
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Text="起動時レイアウト"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,0" />
+                    <ComboBox x:Name="StartupLayoutComboBox"
+                              Grid.Row="1"
+                              Grid.Column="1"
+                              MinHeight="32"
+                              SelectedValuePath="Tag">
+                        <ComboBoxItem Content="キュー中心" Tag="QueueFocus" />
+                        <ComboBoxItem Content="標準" Tag="Standard" />
+                        <ComboBoxItem Content="ブラウザ中心" Tag="BrowserFocus" />
+                        <ComboBoxItem Content="前回の状態を復元" Tag="LastUsed" />
+                    </ComboBox>
                 </Grid>
             </TabItem>
 
@@ -162,6 +189,114 @@
                                Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                TextWrapping="Wrap"
                                Margin="0,12,0,0" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="外部ツール">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Text="yt-dlp.exe"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="YtDlpPathTextBox"
+                             Grid.Row="0"
+                             Grid.Column="1"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,12,10" />
+                    <Button Grid.Row="0"
+                            Grid.Column="2"
+                            Content="参照..."
+                            MinWidth="90"
+                            MinHeight="32"
+                            Margin="0,0,0,10"
+                            Click="BrowseYtDlpPathButton_Click" />
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Text="ffmpeg.exe"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="FfmpegPathTextBox"
+                             Grid.Row="1"
+                             Grid.Column="1"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,12,10" />
+                    <Button Grid.Row="1"
+                            Grid.Column="2"
+                            Content="参照..."
+                            MinWidth="90"
+                            MinHeight="32"
+                            Margin="0,0,0,10"
+                            Click="BrowseFfmpegPathButton_Click" />
+
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="0"
+                               Text="ffprobe.exe"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="FfprobePathTextBox"
+                             Grid.Row="2"
+                             Grid.Column="1"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,12,10" />
+                    <Button Grid.Row="2"
+                            Grid.Column="2"
+                            Content="参照..."
+                            MinWidth="90"
+                            MinHeight="32"
+                            Margin="0,0,0,10"
+                            Click="BrowseFfprobePathButton_Click" />
+
+                    <TextBlock Grid.Row="3"
+                               Grid.Column="0"
+                               Text="yt-dlp取得URL"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="YtDlpDownloadUrlTextBox"
+                             Grid.Row="3"
+                             Grid.Column="1"
+                             Grid.ColumnSpan="2"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,0,10" />
+
+                    <TextBlock Grid.Row="4"
+                               Grid.Column="0"
+                               Text="FFmpeg取得URL"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="FfmpegDownloadUrlTextBox"
+                             Grid.Row="4"
+                             Grid.Column="1"
+                             Grid.ColumnSpan="2"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,0,10" />
+
+                    <TextBlock Grid.Row="5"
+                               Grid.ColumnSpan="3"
+                               Text="空欄の場合は tools フォルダ、次に PATH から検出します。取得URLは通常変更不要です。"
+                               Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Top" />
                 </Grid>
             </TabItem>
 

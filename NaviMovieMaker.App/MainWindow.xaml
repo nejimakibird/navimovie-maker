@@ -7,6 +7,7 @@
         mc:Ignorable="d"
         Title="NaviMovie-Maker" Height="860" Width="1280" MinHeight="760" MinWidth="1080"
         WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded"
         Closing="Window_Closing"
         Icon="pack://application:,,,/Assets/app.ico">
     <Window.Resources>
@@ -53,6 +54,16 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="ConversionQueueRowStyle" TargetType="DataGridRow">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUnsupported}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+                    <Setter Property="FontStyle" Value="Italic" />
+                    <Setter Property="ToolTip" Value="{Binding UnsupportedReason}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -66,6 +77,11 @@
                     <MenuItem x:Name="CheckExternalToolsMenuItem"
                               Header="外部ツール確認"
                               Click="CheckExternalToolsMenuItem_Click" />
+                    <MenuItem x:Name="InstallExternalToolsMenuItem"
+                              Header="外部ツールを自動取得"
+                              Click="InstallExternalToolsMenuItem_Click" />
+                    <MenuItem Header="tools フォルダを開く"
+                              Click="OpenToolsFolderMenuItem_Click" />
                     <Separator />
                     <MenuItem x:Name="SettingsMenuItem"
                               Header="設定"
@@ -547,7 +563,8 @@
                                   DragOver="ConversionQueueDataGrid_DragOver"
                                   Drop="ConversionQueueDataGrid_Drop"
                                   Sorting="ConversionQueueDataGrid_Sorting"
-                                  KeyDown="ConversionQueueDataGrid_KeyDown">
+                                  KeyDown="ConversionQueueDataGrid_KeyDown"
+                                  RowStyle="{StaticResource ConversionQueueRowStyle}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="#"
                                                     Binding="{Binding Order}"
@@ -569,10 +586,30 @@
                                                     Binding="{Binding AudioAdjustmentDisplay}"
                                                     IsReadOnly="True"
                                                     Width="100" />
-                                <DataGridTextColumn Header="状態"
-                                                    Binding="{Binding Status}"
-                                                    IsReadOnly="True"
-                                                    Width="150" />
+                                <DataGridTemplateColumn Header="状態"
+                                                        IsReadOnly="True"
+                                                        Width="240">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid MinHeight="22">
+                                                <ProgressBar Minimum="0"
+                                                             Maximum="100"
+                                                             Value="{Binding ProgressPercent}"
+                                                             IsIndeterminate="{Binding IsIndeterminate}"
+                                                             Opacity="0.45"
+                                                             Height="18"
+                                                             VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding StatusDisplay}"
+                                                           TextAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           FontWeight="SemiBold"
+                                                           Padding="4,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
 

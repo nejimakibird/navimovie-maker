@@ -23,6 +23,16 @@ public partial class SettingsWindow : Window
         ConvertedFolderTextBox.Text = Settings.ConvertedFolder;
         LocalVideoFolderTextBox.Text = Settings.LocalVideoFolder;
         CreatePresetSubfolderCheckBox.IsChecked = Settings.CreateSubfolderPerOutputPreset;
+        StartupLayoutComboBox.SelectedValue = Settings.StartupLayout;
+        YtDlpPathTextBox.Text = Settings.YtDlpPath;
+        FfmpegPathTextBox.Text = Settings.FfmpegPath;
+        FfprobePathTextBox.Text = Settings.FfprobePath;
+        YtDlpDownloadUrlTextBox.Text = string.IsNullOrWhiteSpace(Settings.YtDlpDownloadUrl)
+            ? ExternalToolService.DefaultYtDlpDownloadUrl
+            : Settings.YtDlpDownloadUrl;
+        FfmpegDownloadUrlTextBox.Text = string.IsNullOrWhiteSpace(Settings.FfmpegDownloadUrl)
+            ? ExternalToolService.DefaultFfmpegDownloadUrl
+            : Settings.FfmpegDownloadUrl;
         DownloadProfileComboBox.ItemsSource = DownloadProfileCatalog.GetProfiles();
         DownloadProfileComboBox.SelectedValue = DownloadProfileCatalog.GetProfile(Settings.DownloadProfile).Id;
 
@@ -53,6 +63,21 @@ public partial class SettingsWindow : Window
         BrowseForFolder(LocalVideoFolderTextBox, "ローカル動画フォルダを選択");
     }
 
+    private void BrowseYtDlpPathButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseForExecutable(YtDlpPathTextBox, "yt-dlp.exe を選択", "yt-dlp.exe");
+    }
+
+    private void BrowseFfmpegPathButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseForExecutable(FfmpegPathTextBox, "ffmpeg.exe を選択", "ffmpeg.exe");
+    }
+
+    private void BrowseFfprobePathButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseForExecutable(FfprobePathTextBox, "ffprobe.exe を選択", "ffprobe.exe");
+    }
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         var settings = new AppSettings
@@ -69,6 +94,19 @@ public partial class SettingsWindow : Window
             KeepOriginalDownloadedFiles = Settings.KeepOriginalDownloadedFiles,
             PeakBoost = Settings.PeakBoost,
             TargetPeakDb = Settings.TargetPeakDb,
+            StartupLayout = StartupLayoutComboBox.SelectedValue?.ToString() ?? "QueueFocus",
+            LastCandidatesExpanded = Settings.LastCandidatesExpanded,
+            LastLogExpanded = Settings.LastLogExpanded,
+            LastWindowWidth = Settings.LastWindowWidth,
+            LastWindowHeight = Settings.LastWindowHeight,
+            LastVideoListRowHeight = Settings.LastVideoListRowHeight,
+            LastQueueRowHeight = Settings.LastQueueRowHeight,
+            LastLogRowHeight = Settings.LastLogRowHeight,
+            YtDlpPath = YtDlpPathTextBox.Text.Trim(),
+            FfmpegPath = FfmpegPathTextBox.Text.Trim(),
+            FfprobePath = FfprobePathTextBox.Text.Trim(),
+            YtDlpDownloadUrl = YtDlpDownloadUrlTextBox.Text.Trim(),
+            FfmpegDownloadUrl = FfmpegDownloadUrlTextBox.Text.Trim(),
             VisibleOutputPresetIds = _visiblePresets.Select(static preset => preset.Id).ToList(),
         };
 
@@ -114,6 +152,26 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true)
         {
             textBox.Text = dialog.FolderName;
+        }
+    }
+
+    private void BrowseForExecutable(System.Windows.Controls.TextBox textBox, string title, string fileName)
+    {
+        var initialDirectory = File.Exists(textBox.Text)
+            ? Path.GetDirectoryName(textBox.Text)
+            : AppContext.BaseDirectory;
+
+        var dialog = new OpenFileDialog
+        {
+            Title = title,
+            InitialDirectory = initialDirectory,
+            Filter = $"{fileName}|{fileName}|実行ファイル|*.exe|すべてのファイル|*.*",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            textBox.Text = dialog.FileName;
         }
     }
 
@@ -239,6 +297,28 @@ public partial class SettingsWindow : Window
             return "ローカル動画フォルダは必須です。";
         }
 
+        if (!IsExistingExecutableOrEmpty(settings.YtDlpPath, "yt-dlp.exe"))
+        {
+            return "yt-dlp.exe のパスが正しくありません。";
+        }
+
+        if (!IsExistingExecutableOrEmpty(settings.FfmpegPath, "ffmpeg.exe"))
+        {
+            return "ffmpeg.exe のパスが正しくありません。";
+        }
+
+        if (!IsExistingExecutableOrEmpty(settings.FfprobePath, "ffprobe.exe"))
+        {
+            return "ffprobe.exe のパスが正しくありません。";
+        }
+
         return null;
+    }
+
+    private static bool IsExistingExecutableOrEmpty(string path, string expectedFileName)
+    {
+        return string.IsNullOrWhiteSpace(path)
+            || File.Exists(path)
+                && string.Equals(Path.GetFileName(path), expectedFileName, StringComparison.OrdinalIgnoreCase);
     }
 }

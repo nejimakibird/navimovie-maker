@@ -5,6 +5,8 @@ namespace NaviMovieMaker.App.Services;
 
 public sealed class VideoMetadataService
 {
+    public string YtDlpPath { get; set; } = "yt-dlp";
+
     public async Task<VideoFetchResult> FetchVideoListAsync(
         string url,
         Action<string>? log = null,
@@ -16,7 +18,7 @@ public sealed class VideoMetadataService
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "yt-dlp",
+                    FileName = YtDlpPath,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,

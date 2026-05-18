@@ -37,6 +37,7 @@ public sealed class SettingsService
             NormalizeDownloadProfile(settings);
             NormalizeVisibleOutputPresets(settings);
             NormalizeUiOptions(settings);
+            NormalizeStartupLayout(settings);
             return settings;
         }
         catch (Exception ex)
@@ -83,6 +84,11 @@ public sealed class SettingsService
             KeepOriginalDownloadedFiles = false,
             PeakBoost = false,
             TargetPeakDb = -1.0,
+            StartupLayout = "QueueFocus",
+            LastCandidatesExpanded = false,
+            LastLogExpanded = true,
+            YtDlpDownloadUrl = ExternalToolService.DefaultYtDlpDownloadUrl,
+            FfmpegDownloadUrl = ExternalToolService.DefaultFfmpegDownloadUrl,
             VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList(),
         };
     }
@@ -159,6 +165,27 @@ public sealed class SettingsService
         {
             settings.TargetPeakDb = -1.0;
         }
+    }
+
+    private static void NormalizeStartupLayout(AppSettings settings)
+    {
+        string[] knownStartupLayouts =
+        [
+            "QueueFocus",
+            "Standard",
+            "BrowserFocus",
+            "LastUsed",
+        ];
+
+        var normalizedLayout = knownStartupLayouts.FirstOrDefault(
+            layout => string.Equals(layout, settings.StartupLayout, StringComparison.OrdinalIgnoreCase));
+        if (normalizedLayout is null)
+        {
+            settings.StartupLayout = "QueueFocus";
+            return;
+        }
+
+        settings.StartupLayout = normalizedLayout;
     }
 
     private static string GetVideosFolder()

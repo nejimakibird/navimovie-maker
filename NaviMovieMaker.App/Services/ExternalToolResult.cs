@@ -9,3 +9,21 @@ public sealed record ExternalToolResult(
     string StandardOutput,
     string StandardError,
     int? ExitCode);
+
+public sealed record ExternalToolCheckResult(
+    ExternalToolResult YtDlp,
+    ExternalToolResult Ffmpeg,
+    ExternalToolResult Ffprobe)
+{
+    public bool IsReady => YtDlp.IsAvailable && Ffmpeg.IsAvailable && Ffprobe.IsAvailable;
+
+    public IEnumerable<ExternalToolResult> Results
+    {
+        get
+        {
+            yield return YtDlp;
+            yield return Ffmpeg;
+            yield return Ffprobe;
+        }
+    }
+}
