@@ -190,3 +190,7 @@ Not implemented or future work:
 - Playlist batch download
 - Full channel download
 - Advanced pre-analysis audio gain adjustment
+
+## 14. License
+
+MIT License
