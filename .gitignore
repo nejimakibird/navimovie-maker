@@ -40,3 +40,7 @@ tools/
 yt-dlp.exe
 ffmpeg.exe
 ffprobe.exe
+
+# Publish / release artifacts
+release/
+*.zip
