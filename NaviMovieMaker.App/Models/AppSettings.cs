@@ -24,6 +24,8 @@ public sealed class AppSettings
 
     public bool PeakBoost { get; set; }
 
+    public bool SimpleModeEnabled { get; set; }
+
     public double TargetPeakDb { get; set; } = -1.0;
 
     public string StartupLayout { get; set; } = "QueueFocus";
@@ -70,6 +72,7 @@ public sealed class AppSettings
             AspectMode = AspectMode,
             KeepOriginalDownloadedFiles = KeepOriginalDownloadedFiles,
             PeakBoost = PeakBoost,
+            SimpleModeEnabled = SimpleModeEnabled,
             TargetPeakDb = TargetPeakDb,
             StartupLayout = StartupLayout,
             LastCandidatesExpanded = LastCandidatesExpanded,

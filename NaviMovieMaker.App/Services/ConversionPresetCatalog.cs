@@ -4,6 +4,12 @@ public static class ConversionPresetCatalog
 {
     public const string CurrentCompatibilityId = "car-navi-current";
     public const string AudioMp4AacOnlyHighId = "audio-mp4-aac-only-high";
+    public const string IpadTabletMp41080pStandardId = "ipad-tablet-mp4-1080p-standard";
+    public const string IpadTabletMp4720pCompatibleId = "ipad-tablet-mp4-720p-compatible";
+    public const string IpadTabletHevc1080pHighCompressionId = "ipad-tablet-hevc-1080p-high-compression";
+    public const string AndroidTabletMp41080pStandardId = "android-tablet-mp4-1080p-standard";
+    public const string AndroidTabletMp4720pCompatibleId = "android-tablet-mp4-720p-compatible";
+    public const string AndroidTabletHevc1080pHighCompressionId = "android-tablet-hevc-1080p-high-compression";
 
     public static IReadOnlyList<ConversionPreset> GetPresets()
     {
@@ -33,6 +39,12 @@ public static class ConversionPresetCatalog
             CreateCarNaviMp4("car-navi-small", "Car Navi MP4 - Small Size", 640, 360, 2000, 3000, 4000),
             CreateCarNaviMp4("car-navi-standard", "Car Navi MP4 - Standard", 720, 480, 4000, 5000, 8000),
             CreateCarNaviMp4("car-navi-high", "Car Navi MP4 - High Quality", 720, 480, 5000, 6000, 10000),
+            CreateTabletMp4(IpadTabletMp41080pStandardId, "iPad / タブレット MP4 1080p 標準", 1920, 1080, 6000, 8000, 12000, 192, "high", "4.1"),
+            CreateTabletMp4(IpadTabletMp4720pCompatibleId, "iPad / タブレット MP4 720p 互換", 1280, 720, 3000, 4000, 8000, 128, "main", "3.1"),
+            CreateTabletHevc(IpadTabletHevc1080pHighCompressionId, "iPad / タブレット HEVC 1080p 高圧縮", 1920, 1080, 3500, 4500, 9000, 160),
+            CreateTabletMp4(AndroidTabletMp41080pStandardId, "Androidタブレット MP4 1080p 標準", 1920, 1080, 6000, 8000, 12000, 192, "high", "4.1"),
+            CreateTabletMp4(AndroidTabletMp4720pCompatibleId, "Androidタブレット MP4 720p 互換", 1280, 720, 3000, 4000, 8000, 128, "main", "3.1"),
+            CreateTabletHevc(AndroidTabletHevc1080pHighCompressionId, "Androidタブレット HEVC 1080p 高圧縮", 1920, 1080, 3500, 4500, 9000, 160),
             CreatePortableDvdMpg("dvd-small", "Portable DVD Player MPG - Small Size (MP2 audio)", 4000, 5000),
             CreatePortableDvdMpg("dvd-standard", "Portable DVD Player MPG - Standard (MP2 audio)", 5000, 6000),
             CreatePortableDvdMpg("dvd-high", "Portable DVD Player MPG - High Quality (MP2 audio)", 6000, 7000),
@@ -63,6 +75,12 @@ public static class ConversionPresetCatalog
             CurrentCompatibilityId,
             "car-navi-standard",
             "car-navi-small",
+            IpadTabletMp41080pStandardId,
+            IpadTabletMp4720pCompatibleId,
+            IpadTabletHevc1080pHighCompressionId,
+            AndroidTabletMp41080pStandardId,
+            AndroidTabletMp4720pCompatibleId,
+            AndroidTabletHevc1080pHighCompressionId,
             "dvd-standard",
             AudioMp4AacOnlyHighId,
             "audio-mp3-high",
@@ -74,6 +92,19 @@ public static class ConversionPresetCatalog
     public static ConversionPreset GetDefault()
     {
         return GetPresets()[0];
+    }
+
+    public static IReadOnlyList<string> GetTabletPresetIds()
+    {
+        return
+        [
+            IpadTabletMp41080pStandardId,
+            IpadTabletMp4720pCompatibleId,
+            IpadTabletHevc1080pHighCompressionId,
+            AndroidTabletMp41080pStandardId,
+            AndroidTabletMp4720pCompatibleId,
+            AndroidTabletHevc1080pHighCompressionId,
+        ];
     }
 
     private static ConversionPreset CreateCarNaviMp4(
@@ -129,6 +160,70 @@ public static class ConversionPresetCatalog
             null,
             false,
             "mpeg",
+            false,
+            true);
+    }
+
+    private static ConversionPreset CreateTabletMp4(
+        string id,
+        string displayName,
+        int width,
+        int height,
+        int videoBitrateKbps,
+        int maxRateKbps,
+        int bufSizeKbps,
+        int audioBitrateKbps,
+        string videoProfile,
+        string videoLevel)
+    {
+        return new ConversionPreset(
+            id,
+            displayName,
+            ".mp4",
+            "libx264",
+            "aac",
+            width,
+            height,
+            30,
+            videoBitrateKbps,
+            maxRateKbps,
+            bufSizeKbps,
+            audioBitrateKbps,
+            videoProfile,
+            videoLevel,
+            true,
+            null,
+            false,
+            true);
+    }
+
+    private static ConversionPreset CreateTabletHevc(
+        string id,
+        string displayName,
+        int width,
+        int height,
+        int videoBitrateKbps,
+        int maxRateKbps,
+        int bufSizeKbps,
+        int audioBitrateKbps)
+    {
+        return new ConversionPreset(
+            id,
+            displayName,
+            ".mp4",
+            "libx265",
+            "aac",
+            width,
+            height,
+            30,
+            videoBitrateKbps,
+            maxRateKbps,
+            bufSizeKbps,
+            audioBitrateKbps,
+            "main",
+            null,
+            true,
+            null,
             false,
             true);
     }

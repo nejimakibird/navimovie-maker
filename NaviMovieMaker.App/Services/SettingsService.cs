@@ -83,6 +83,7 @@ public sealed class SettingsService
             AspectMode = "Keep aspect ratio + padding",
             KeepOriginalDownloadedFiles = false,
             PeakBoost = false,
+            SimpleModeEnabled = false,
             TargetPeakDb = -1.0,
             StartupLayout = "QueueFocus",
             LastCandidatesExpanded = false,
@@ -115,6 +116,14 @@ public sealed class SettingsService
         if (settings.VisibleOutputPresetIds.Count == 0)
         {
             settings.VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList();
+        }
+
+        foreach (var tabletPresetId in ConversionPresetCatalog.GetTabletPresetIds())
+        {
+            if (!settings.VisibleOutputPresetIds.Contains(tabletPresetId, StringComparer.OrdinalIgnoreCase))
+            {
+                settings.VisibleOutputPresetIds.Add(tabletPresetId);
+            }
         }
     }
 

@@ -100,6 +100,63 @@
             <TextBlock x:Name="ExternalToolsStatusTextBlock"
                        Text="External tools: Check required"
                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+            <GroupBox Header="Simple Mode"
+                      Margin="0,10,0,0">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <CheckBox x:Name="SimpleModeCheckBox"
+                              Grid.Column="0"
+                              Content="Simple Mode"
+                              VerticalAlignment="Center"
+                              Margin="0,0,12,0"
+                              Checked="SimpleModeCheckBox_CheckedChanged"
+                              Unchecked="SimpleModeCheckBox_CheckedChanged" />
+                    <ComboBox x:Name="SimpleOutputPresetComboBox"
+                              Grid.Column="1"
+                              ToolTip="Simple Modeで使う出力形式を選びます。"
+                              MinHeight="30"
+                              Margin="0,0,12,0"
+                              SelectionChanged="SimpleOutputPresetComboBox_SelectionChanged" />
+                    <Border Grid.Column="2"
+                            x:Name="SimpleModeDropArea"
+                            AllowDrop="True"
+                            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12,6"
+                            Margin="0,0,12,0"
+                            DragOver="SimpleModeDropArea_DragOver"
+                            Drop="SimpleModeDropArea_Drop">
+                        <TextBlock x:Name="SimpleModeStatusTextBlock"
+                                   Text="URL またはローカルファイルをここへドロップ"
+                                   TextAlignment="Center"
+                                   Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+                    </Border>
+                    <Button x:Name="SimpleCancelQueueButton"
+                            Grid.Column="3"
+                            Content="キャンセル"
+                            ToolTip="現在実行中の処理を中断します。"
+                            IsEnabled="False"
+                            MinWidth="100"
+                            MinHeight="30"
+                            Margin="0,0,8,0"
+                            Click="SimpleCancelQueueButton_Click" />
+                    <Button Grid.Column="4"
+                            Content="変換済みフォルダ"
+                            MinWidth="130"
+                            MinHeight="30"
+                            Click="OpenConvertedFolderMenuItem_Click" />
+                </Grid>
+            </GroupBox>
         </StackPanel>
 
         <Grid Grid.Row="1">
@@ -384,7 +441,9 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <WrapPanel Grid.Row="0" Margin="0,0,0,8">
+                    <WrapPanel x:Name="NormalQueueOptionsPanel"
+                               Grid.Row="0"
+                               Margin="0,0,0,8">
                         <TextBlock Text="実行モード"
                                    ToolTip="キューをどの方法で処理するかを選びます。"
                                    VerticalAlignment="Center"
@@ -448,7 +507,9 @@
                                  PreviewTextInput="NumberPrefixTextBox_PreviewTextInput" />
                     </WrapPanel>
 
-                    <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                    <WrapPanel x:Name="NormalAudioOptionsPanel"
+                               Grid.Row="1"
+                               Margin="0,0,0,8">
                         <CheckBox x:Name="PeakBoostCheckBox"
                                   Content="音量持ち上げ"
                                   ToolTip="音量ピークが低いファイルだけ、目標ピークまで自動で持ち上げます。すでに大きい音源は下げません。"
@@ -496,7 +557,9 @@
                         </ComboBox>
                     </WrapPanel>
 
-                    <WrapPanel Grid.Row="2" Margin="0,0,0,8">
+                    <WrapPanel x:Name="NormalQueueActionsPanel"
+                               Grid.Row="2"
+                               Margin="0,0,0,8">
                         <Button x:Name="ConvertQueueButton"
                                 Content="実行"
                                 ToolTip="現在のキューを上から順に処理します。"
@@ -563,6 +626,7 @@
                                   DragOver="ConversionQueueDataGrid_DragOver"
                                   Drop="ConversionQueueDataGrid_Drop"
                                   Sorting="ConversionQueueDataGrid_Sorting"
+                                  PreviewKeyDown="ConversionQueueDataGrid_PreviewKeyDown"
                                   KeyDown="ConversionQueueDataGrid_KeyDown"
                                   RowStyle="{StaticResource ConversionQueueRowStyle}">
                             <DataGrid.Columns>
@@ -582,13 +646,14 @@
                                                     Binding="{Binding SourcePathOrUrl}"
                                                     IsReadOnly="True"
                                                     Width="*" />
-                                <DataGridTextColumn Header="音声"
+                                <DataGridTextColumn Header="音声補正"
                                                     Binding="{Binding AudioAdjustmentDisplay}"
                                                     IsReadOnly="True"
                                                     Width="100" />
                                 <DataGridTemplateColumn Header="状態"
                                                         IsReadOnly="True"
-                                                        Width="240">
+                                                        Width="460"
+                                                        MinWidth="360">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid MinHeight="22">

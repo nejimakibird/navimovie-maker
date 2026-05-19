@@ -71,7 +71,10 @@ public partial class MainWindow : Window
     private bool _isDownloading;
     private bool _isConverting;
     private bool _isQueueConverting;
+    private bool _isSimpleModeRunning;
     private bool _isApplyingPersistedUiOptions;
+    private bool? _preSimpleCandidatesExpanded;
+    private bool? _preSimpleLogExpanded;
 
     public MainWindow()
     {
@@ -105,6 +108,8 @@ public partial class MainWindow : Window
         UpdateSectionHeaders();
         UpdateMainWorkspaceLayout();
         ApplyStartupRowLayout();
+        ApplySimpleModeUiState(restoreNormalLayout: false);
+        UpdateSimpleModeStatus();
         _log.Info("Application started.");
         _log.Info("SD card copying and playback order sorting are handled outside NaviMovie-Maker, for example with Explorer and UMSSort.");
     }
@@ -344,6 +349,137 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void SimpleModeCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        if (_isApplyingPersistedUiOptions)
+        {
+            return;
+        }
+
+        _settings.SimpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
+        SavePersistedUiOptions();
+        ApplySimpleModeUiState(restoreNormalLayout: true);
+        UpdateSimpleModeStatus();
+    }
+
+    private void ApplySimpleModeUiState(bool restoreNormalLayout)
+    {
+        if (SimpleModeCheckBox is null
+            || CandidatesExpander is null
+            || ConversionQueueExpander is null
+            || LogExpander is null)
+        {
+            return;
+        }
+
+        var simpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
+        NormalQueueOptionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        NormalAudioOptionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        NormalQueueActionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        CandidatesExpander.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+
+        if (simpleModeEnabled)
+        {
+            _preSimpleCandidatesExpanded ??= CandidatesExpander.IsExpanded;
+            _preSimpleLogExpanded ??= LogExpander.IsExpanded;
+            ConversionQueueExpander.IsExpanded = true;
+            LogExpander.IsExpanded = true;
+        }
+        else if (restoreNormalLayout)
+        {
+            if (_preSimpleCandidatesExpanded is { } candidatesExpanded)
+            {
+                CandidatesExpander.IsExpanded = candidatesExpanded;
+            }
+
+            if (_preSimpleLogExpanded is { } logExpanded)
+            {
+                LogExpander.IsExpanded = logExpanded;
+            }
+
+            _preSimpleCandidatesExpanded = null;
+            _preSimpleLogExpanded = null;
+        }
+
+        UpdateMainWorkspaceLayout();
+        if (simpleModeEnabled)
+        {
+            VideoListWorkRow.MinHeight = 0;
+            VideoListWorkRow.Height = GridLength.Auto;
+            QueueWorkRow.MinHeight = 180;
+            QueueWorkRow.Height = new GridLength(3, GridUnitType.Star);
+            LogWorkRow.MinHeight = 140;
+            LogWorkRow.Height = new GridLength(1, GridUnitType.Star);
+            CandidateQueueGridSplitter.Visibility = Visibility.Collapsed;
+            LogGridSplitter.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void UpdateSimpleModeStatus()
+    {
+        if (SimpleModeStatusTextBlock is null || SimpleModeCheckBox is null)
+        {
+            return;
+        }
+
+        if (_isSimpleModeRunning)
+        {
+            SimpleModeStatusTextBlock.Text = "Simple Mode 処理中...";
+            return;
+        }
+
+        SimpleModeStatusTextBlock.Text = SimpleModeCheckBox.IsChecked == true
+            ? "URL またはローカルファイルをここへドロップ"
+            : "Simple Mode を有効にするとドロップできます";
+    }
+
+    private void SimpleModeDropArea_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = SimpleModeCheckBox.IsChecked == true
+            && (e.Data.GetDataPresent(DataFormats.FileDrop) || GetDroppedText(e.Data) is not null)
+                ? DragDropEffects.Copy
+                : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void SimpleModeDropArea_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (SimpleModeCheckBox.IsChecked != true)
+        {
+            SimpleModeStatusTextBlock.Text = "Simple Mode を有効にしてください";
+            return;
+        }
+
+        var beforeItems = _conversionQueue.ToHashSet();
+        if (e.Data.GetDataPresent(DataFormats.FileDrop)
+            && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            AddLocalFilesToQueue(paths, "Simple Mode", isSimpleModeItem: true);
+        }
+        else if (GetDroppedText(e.Data) is { } droppedText)
+        {
+            await AddDroppedTextUrlsToQueueAsync(droppedText, isSimpleModeItem: true);
+        }
+        else
+        {
+            SimpleModeStatusTextBlock.Text = "ドロップされた項目を認識できません";
+            return;
+        }
+
+        var addedItems = _conversionQueue
+            .Where(item => !beforeItems.Contains(item) && item.IsSimpleModeItem)
+            .ToList();
+        if (addedItems.Count == 0)
+        {
+            SimpleModeStatusTextBlock.Text = "追加できる項目がありません";
+            return;
+        }
+
+        SimpleModeStatusTextBlock.Text = $"{addedItems.Count} 件を追加しました";
+        _ = RunSimpleModeQueueAsync();
+    }
+
     private void MoveUpButton_Click(object sender, RoutedEventArgs e)
     {
         if (VideoListDataGrid.SelectedItem is not VideoListItem selectedItem)
@@ -493,6 +629,29 @@ public partial class MainWindow : Window
         }
     }
 
+    private static ConversionQueueItem CreateQueueItem(
+        string sourceType,
+        string title,
+        string sourcePathOrUrl,
+        string status,
+        string downloadedFilePath = "",
+        string convertedFilePath = "",
+        string unsupportedReason = "",
+        bool isSimpleModeItem = false)
+    {
+        return new ConversionQueueItem
+        {
+            SourceType = sourceType,
+            Title = title,
+            SourcePathOrUrl = sourcePathOrUrl,
+            IsSimpleModeItem = isSimpleModeItem,
+            DownloadedFilePath = downloadedFilePath,
+            ConvertedFilePath = convertedFilePath,
+            Status = status,
+            UnsupportedReason = unsupportedReason,
+        };
+    }
+
     private void AddSelectedToQueueButton_Click(object sender, RoutedEventArgs e)
     {
         var selectedVideos = VideoListDataGrid.SelectedItems
@@ -525,15 +684,13 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            _conversionQueue.Add(new ConversionQueueItem
-            {
-                SourceType = "OnlineVideo",
-                Title = video.Title,
-                SourcePathOrUrl = sourcePathOrUrl,
-                DownloadedFilePath = video.DownloadedFilePath,
-                ConvertedFilePath = video.ConvertedFilePath,
-                Status = "Pending",
-            });
+            _conversionQueue.Add(CreateQueueItem(
+                sourceType: "OnlineVideo",
+                title: video.Title,
+                sourcePathOrUrl: sourcePathOrUrl,
+                status: "Pending",
+                downloadedFilePath: video.DownloadedFilePath,
+                convertedFilePath: video.ConvertedFilePath));
             addedCount++;
         }
 
@@ -683,8 +840,28 @@ public partial class MainWindow : Window
 
     private void OutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        SyncPresetSelection(OutputPresetComboBox, SimpleOutputPresetComboBox);
         UpdateAspectModeSelector();
         SavePersistedUiOptions();
+    }
+
+    private void SimpleOutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        SyncPresetSelection(SimpleOutputPresetComboBox, OutputPresetComboBox);
+    }
+
+    private static void SyncPresetSelection(
+        System.Windows.Controls.ComboBox source,
+        System.Windows.Controls.ComboBox target)
+    {
+        var selectedTag = GetSelectedComboBoxTag(source);
+        if (string.IsNullOrWhiteSpace(selectedTag)
+            || string.Equals(GetSelectedComboBoxTag(target), selectedTag, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        SelectComboBoxItemByTag(target, selectedTag);
     }
 
     private void AudioAdjustmentComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -842,14 +1019,23 @@ public partial class MainWindow : Window
             && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
         {
             e.Handled = true;
-            AddLocalFilesToQueue(paths, "drag and drop");
+            AddLocalFilesToQueue(paths, "drag and drop", isSimpleModeItem: SimpleModeCheckBox.IsChecked == true);
+            if (SimpleModeCheckBox.IsChecked == true)
+            {
+                _ = RunSimpleModeQueueAsync();
+            }
+
             return;
         }
 
         if (GetDroppedText(e.Data) is { } droppedText)
         {
             e.Handled = true;
-            await AddDroppedTextUrlsToQueueAsync(droppedText);
+            await AddDroppedTextUrlsToQueueAsync(droppedText, isSimpleModeItem: SimpleModeCheckBox.IsChecked == true);
+            if (SimpleModeCheckBox.IsChecked == true)
+            {
+                _ = RunSimpleModeQueueAsync();
+            }
         }
     }
 
@@ -864,6 +1050,13 @@ public partial class MainWindow : Window
     {
         if (_queueDragStartPoint is null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
         {
+            return;
+        }
+
+        if (IsQueueProcessingActive())
+        {
+            _queueDragStartPoint = null;
+            _log.Info("処理中はキューの並べ替えはできません。");
             return;
         }
 
@@ -882,6 +1075,14 @@ public partial class MainWindow : Window
         _draggedQueueItems = GetQueueDragItems(rowItem);
         if (_draggedQueueItems.Count == 0)
         {
+            return;
+        }
+
+        if (_draggedQueueItems.Any(IsActiveQueueItem))
+        {
+            _draggedQueueItems = [];
+            _queueDragStartPoint = null;
+            _log.Info("処理中はキューの並べ替えはできません。");
             return;
         }
 
@@ -913,6 +1114,7 @@ public partial class MainWindow : Window
         }
 
         e.Effects = e.Data.GetDataPresent(QueueReorderDragFormat) && _draggedQueueItems.Count > 0
+            && !IsQueueProcessingActive()
             ? DragDropEffects.Move
             : DragDropEffects.None;
         e.Handled = true;
@@ -929,19 +1131,37 @@ public partial class MainWindow : Window
             && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
         {
             e.Handled = true;
-            AddLocalFilesToQueue(paths, "drag and drop");
+            AddLocalFilesToQueue(paths, "drag and drop", isSimpleModeItem: SimpleModeCheckBox.IsChecked == true);
+            if (SimpleModeCheckBox.IsChecked == true)
+            {
+                _ = RunSimpleModeQueueAsync();
+            }
+
             return;
         }
 
         if (GetDroppedText(e.Data) is { } droppedText)
         {
             e.Handled = true;
-            await AddDroppedTextUrlsToQueueAsync(droppedText);
+            await AddDroppedTextUrlsToQueueAsync(droppedText, isSimpleModeItem: SimpleModeCheckBox.IsChecked == true);
+            if (SimpleModeCheckBox.IsChecked == true)
+            {
+                _ = RunSimpleModeQueueAsync();
+            }
+
             return;
         }
 
         if (!e.Data.GetDataPresent(QueueReorderDragFormat) || _draggedQueueItems.Count == 0)
         {
+            return;
+        }
+
+        if (IsQueueProcessingActive() || _draggedQueueItems.Any(IsActiveQueueItem))
+        {
+            _draggedQueueItems = [];
+            _log.Info("処理中はキューの並べ替えはできません。");
+            e.Handled = true;
             return;
         }
 
@@ -1070,6 +1290,12 @@ public partial class MainWindow : Window
         List<ConversionQueueItem> draggedItems,
         ConversionQueueItem? targetItem)
     {
+        if (IsQueueProcessingActive() || draggedItems.Any(IsActiveQueueItem))
+        {
+            _log.Info("処理中はキューの並べ替えはできません。");
+            return;
+        }
+
         var itemsToMove = draggedItems
             .Where(item => _conversionQueue.Contains(item))
             .OrderBy(item => _conversionQueue.IndexOf(item))
@@ -1124,6 +1350,12 @@ public partial class MainWindow : Window
 
     private void QueueMoveUpButton_Click(object sender, RoutedEventArgs e)
     {
+        if (IsQueueProcessingActive())
+        {
+            _log.Info("処理中はキューの並べ替えはできません。");
+            return;
+        }
+
         if (ConversionQueueDataGrid.SelectedItems.Count > 1)
         {
             _log.Info("Move Up supports one selected queue row at a time.");
@@ -1132,6 +1364,12 @@ public partial class MainWindow : Window
 
         if (ConversionQueueDataGrid.SelectedItem is not ConversionQueueItem selectedItem)
         {
+            return;
+        }
+
+        if (IsActiveQueueItem(selectedItem))
+        {
+            _log.Info("処理中はキューの並べ替えはできません。");
             return;
         }
 
@@ -1149,6 +1387,12 @@ public partial class MainWindow : Window
 
     private void QueueMoveDownButton_Click(object sender, RoutedEventArgs e)
     {
+        if (IsQueueProcessingActive())
+        {
+            _log.Info("処理中はキューの並べ替えはできません。");
+            return;
+        }
+
         if (ConversionQueueDataGrid.SelectedItems.Count > 1)
         {
             _log.Info("Move Down supports one selected queue row at a time.");
@@ -1157,6 +1401,12 @@ public partial class MainWindow : Window
 
         if (ConversionQueueDataGrid.SelectedItem is not ConversionQueueItem selectedItem)
         {
+            return;
+        }
+
+        if (IsActiveQueueItem(selectedItem))
+        {
+            _log.Info("処理中はキューの並べ替えはできません。");
             return;
         }
 
@@ -1177,6 +1427,23 @@ public partial class MainWindow : Window
         RemoveSelectedQueueItems();
     }
 
+    private void SimpleCancelQueueButton_Click(object sender, RoutedEventArgs e)
+    {
+        RequestQueueCancellation();
+    }
+
+    private void RequestQueueCancellation()
+    {
+        if (_queueCancellationTokenSource is null || !IsQueueProcessingActive())
+        {
+            _log.Info("実行中のキュー処理はありません。");
+            return;
+        }
+
+        _log.Info("Cancel requested. Stopping current queue process...");
+        _queueCancellationTokenSource.Cancel();
+    }
+
     private void RemoveSelectedQueueItems()
     {
         var selectedItems = ConversionQueueDataGrid.SelectedItems
@@ -1188,26 +1455,44 @@ public partial class MainWindow : Window
             return;
         }
 
-        foreach (var selectedItem in selectedItems)
+        var activeItems = selectedItems.Where(IsActiveQueueItem).ToList();
+        if (activeItems.Count > 0)
+        {
+            _log.Warn("処理中の項目は削除できません。中断する場合はキャンセルを使用してください。");
+        }
+
+        var removableItems = selectedItems.Except(activeItems).ToList();
+        if (removableItems.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var selectedItem in removableItems)
         {
             _conversionQueue.Remove(selectedItem);
         }
 
         RefreshQueueOrderNumbers();
-        _log.Info($"Removed {selectedItems.Count} item(s) from the conversion queue.");
+        _log.Info($"Removed {removableItems.Count} item(s) from the conversion queue.");
     }
 
     private void QueueClearButton_Click(object sender, RoutedEventArgs e)
     {
-        var removedCount = _conversionQueue.Count;
-        if (removedCount == 0)
+        var activeCount = _conversionQueue.Count(IsActiveQueueItem);
+        var removableItems = _conversionQueue.Where(item => !IsActiveQueueItem(item)).ToList();
+        if (activeCount > 0)
+        {
+            _log.Warn("処理中の項目は削除できません。中断する場合はキャンセルを使用してください。");
+        }
+
+        if (removableItems.Count == 0)
         {
             return;
         }
 
         var result = MessageBox.Show(
             this,
-            $"Remove all {removedCount} item(s) from the conversion queue?",
+            $"Remove {removableItems.Count} item(s) from the conversion queue?",
             "Clear Queue",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -1216,12 +1501,27 @@ public partial class MainWindow : Window
             return;
         }
 
-        _conversionQueue.Clear();
+        foreach (var item in removableItems)
+        {
+            _conversionQueue.Remove(item);
+        }
+
         RefreshQueueOrderNumbers();
-        _log.Info($"Cleared {removedCount} item(s) from the conversion queue.");
+        _log.Info($"Cleared {removableItems.Count} item(s) from the conversion queue.");
     }
 
     private void ConversionQueueDataGrid_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Delete)
+        {
+            return;
+        }
+
+        RemoveSelectedQueueItems();
+        e.Handled = true;
+    }
+
+    private void ConversionQueueDataGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != System.Windows.Input.Key.Delete)
         {
@@ -1447,10 +1747,163 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task RunSimpleModeQueueAsync()
+    {
+        if (_isSimpleModeRunning || _isQueueConverting)
+        {
+            return;
+        }
+
+        _isSimpleModeRunning = true;
+        _isQueueConverting = true;
+        _queueCancellationTokenSource = new CancellationTokenSource();
+        SetQueueConversionState(isConverting: true);
+        SimpleModeStatusTextBlock.Text = "Simple Mode 処理中...";
+
+        try
+        {
+            Directory.CreateDirectory(_settings.TemporaryFolder);
+            Directory.CreateDirectory(_settings.ConvertedFolder);
+
+            while (true)
+            {
+                var pendingItems = _conversionQueue
+                    .Where(static item => item.IsSimpleModeItem && IsSimpleModeProcessableStatus(item.Status))
+                    .OrderBy(static item => item.Order)
+                    .ToList();
+                if (pendingItems.Count == 0)
+                {
+                    break;
+                }
+
+                var requiresYtDlp = pendingItems.Any(static item => item.SourceType == "OnlineVideo");
+                if (!await EnsureRequiredToolsAsync(requiresYtDlp, requireFfmpeg: true, "Simple Mode"))
+                {
+                    SimpleModeStatusTextBlock.Text = "必要な外部ツールが不足しています";
+                    break;
+                }
+
+                var preset = GetSelectedConversionPreset();
+                var downloadProfile = ResolveDownloadProfile("Download & Convert", preset);
+                _activeNumberPrefixStartNumber = null;
+                _activeQueueProgressItems = pendingItems;
+                ResetQueueProgress(pendingItems.Count);
+                _log.Info($"Simple Mode started. {pendingItems.Count} item(s). Preset: {preset.DisplayName}");
+
+                var outputOrder = 1;
+                foreach (var item in pendingItems)
+                {
+                    if (_queueCancellationTokenSource.IsCancellationRequested)
+                    {
+                        MarkRemainingQueueItemsAsSkipped(pendingItems, item);
+                        SimpleModeStatusTextBlock.Text = "Simple Mode キャンセル";
+                        break;
+                    }
+
+                    ApplySimpleModeSupportStatus(item);
+                    if (item.IsUnsupported)
+                    {
+                        _log.Info($"Simple Mode skipping {item.Order:000}: {item.UnsupportedReason}");
+                        RefreshQueueProgressFromStatuses(pendingItems);
+                        continue;
+                    }
+
+                    if (!EnsureQueueUrlIsSafe(item))
+                    {
+                        RefreshQueueProgressFromStatuses(pendingItems);
+                        continue;
+                    }
+
+                    SimpleModeStatusTextBlock.Text = $"処理中: {item.Title}";
+                    ClearQueueProgress(item);
+                    item.Status = "Pending";
+
+                    if (item.SourceType == "OnlineVideo")
+                    {
+                        await RunSimpleModeOnlineItemAsync(item, outputOrder, preset, downloadProfile, _queueCancellationTokenSource.Token);
+                    }
+                    else if (item.SourceType == "LocalFile")
+                    {
+                        await ConvertQueueItemAsync(item, item.SourcePathOrUrl, outputOrder, preset, _queueCancellationTokenSource.Token);
+                    }
+
+                    outputOrder++;
+                    RefreshQueueProgressFromStatuses(pendingItems);
+                }
+            }
+        }
+        finally
+        {
+            _queueCancellationTokenSource?.Dispose();
+            _queueCancellationTokenSource = null;
+            _activeNumberPrefixStartNumber = null;
+            _activeQueueProgressItems = [];
+            _isQueueConverting = false;
+            _isSimpleModeRunning = false;
+            SetQueueConversionState(isConverting: false);
+            UpdateSimpleModeStatus();
+            _log.Info("Simple Mode task finished.");
+        }
+    }
+
+    private async Task RunSimpleModeOnlineItemAsync(
+        ConversionQueueItem item,
+        int outputOrder,
+        ConversionPreset preset,
+        DownloadProfileOption downloadProfile,
+        CancellationToken cancellationToken)
+    {
+        var downloadResult = await DownloadQueueItemAsync(
+            item,
+            _settings.TemporaryFolder,
+            outputOrder,
+            addNumberPrefix: false,
+            downloadProfile: downloadProfile,
+            cleanupFailedDownloadArtifacts: true,
+            cancellationToken);
+
+        try
+        {
+            if (downloadResult.IsCanceled)
+            {
+                ClearQueueProgress(item);
+                item.Status = "Skipped";
+                return;
+            }
+
+            if (!downloadResult.IsSuccess || string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
+            {
+                ClearQueueProgress(item);
+                item.Status = "Failed";
+                _log.Error($"Simple Mode download failed for queue item {item.Order:000}: {item.Title}");
+                LogProcessOutput(downloadResult.StandardError, "yt-dlp stderr");
+                LogProcessOutput(downloadResult.StandardOutput, "yt-dlp stdout");
+                return;
+            }
+
+            item.DownloadedFilePath = downloadResult.DownloadedFilePath;
+            ClearQueueProgress(item);
+            item.Status = "Downloaded";
+            _log.Info($"Simple Mode temporary download path: {item.DownloadedFilePath}");
+            await ConvertQueueItemAsync(item, item.DownloadedFilePath, outputOrder, preset, cancellationToken);
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(downloadResult.DownloadedFilePath))
+            {
+                DeleteTemporaryDownload(downloadResult.DownloadedFilePath);
+            }
+        }
+    }
+
+    private static bool IsSimpleModeProcessableStatus(string status)
+    {
+        return status is "Pending" or QueueStatusReady or QueueStatusReadyWithWarning;
+    }
+
     private void CancelQueueButton_Click(object sender, RoutedEventArgs e)
     {
-        _log.Info("Cancel requested. Stopping current queue process...");
-        _queueCancellationTokenSource?.Cancel();
+        RequestQueueCancellation();
     }
 
     private async Task RunCopyFilesQueueItemAsync(ConversionQueueItem item, int outputOrder)
@@ -2161,25 +2614,35 @@ public partial class MainWindow : Window
             : _settings.OutputPresetId;
 
         OutputPresetComboBox.SelectionChanged -= OutputPresetComboBox_SelectionChanged;
-        OutputPresetComboBox.Items.Clear();
+        PopulatePresetComboBox(OutputPresetComboBox, selectedPresetId);
+        OutputPresetComboBox.SelectionChanged += OutputPresetComboBox_SelectionChanged;
 
+        if (SimpleOutputPresetComboBox is not null)
+        {
+            SimpleOutputPresetComboBox.SelectionChanged -= SimpleOutputPresetComboBox_SelectionChanged;
+            PopulatePresetComboBox(SimpleOutputPresetComboBox, GetSelectedComboBoxTag(OutputPresetComboBox));
+            SimpleOutputPresetComboBox.SelectionChanged += SimpleOutputPresetComboBox_SelectionChanged;
+        }
+
+        UpdateAspectModeSelector();
+    }
+
+    private void PopulatePresetComboBox(System.Windows.Controls.ComboBox comboBox, string? selectedPresetId)
+    {
+        comboBox.Items.Clear();
         foreach (var preset in GetVisibleOutputPresets())
         {
-            OutputPresetComboBox.Items.Add(new System.Windows.Controls.ComboBoxItem
+            comboBox.Items.Add(new System.Windows.Controls.ComboBoxItem
             {
                 Content = preset.DisplayName,
                 Tag = preset.Id,
             });
         }
 
-        var itemToSelect = OutputPresetComboBox.Items
+        comboBox.SelectedItem = comboBox.Items
             .OfType<System.Windows.Controls.ComboBoxItem>()
             .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), selectedPresetId, StringComparison.OrdinalIgnoreCase))
-            ?? OutputPresetComboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
-
-        OutputPresetComboBox.SelectedItem = itemToSelect;
-        OutputPresetComboBox.SelectionChanged += OutputPresetComboBox_SelectionChanged;
-        UpdateAspectModeSelector();
+            ?? comboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
     }
 
     private void ApplyPersistedUiOptions()
@@ -2192,6 +2655,7 @@ public partial class MainWindow : Window
             SelectComboBoxItemByTag(AspectModeComboBox, _settings.AspectMode);
             KeepOriginalDownloadedFilesCheckBox.IsChecked = _settings.KeepOriginalDownloadedFiles;
             PeakBoostCheckBox.IsChecked = _settings.PeakBoost;
+            SimpleModeCheckBox.IsChecked = _settings.SimpleModeEnabled;
             SelectComboBoxItemByContent(
                 TargetPeakComboBox,
                 $"{_settings.TargetPeakDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS",
@@ -2221,6 +2685,7 @@ public partial class MainWindow : Window
         _settings.AspectMode = GetSelectedAspectMode();
         _settings.KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true;
         _settings.PeakBoost = PeakBoostCheckBox.IsChecked == true;
+        _settings.SimpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
         _settings.TargetPeakDb = GetSelectedTargetPeakDb();
         SaveLastUsedLayoutState();
 
@@ -2378,6 +2843,13 @@ public partial class MainWindow : Window
             ?? comboBox.Items.OfType<System.Windows.Controls.ComboBoxItem>().FirstOrDefault();
 
         comboBox.SelectedItem = itemToSelect;
+    }
+
+    private static string? GetSelectedComboBoxTag(System.Windows.Controls.ComboBox comboBox)
+    {
+        return comboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item
+            ? item.Tag?.ToString()
+            : null;
     }
 
     private List<ConversionPreset> GetVisibleOutputPresets()
@@ -2583,6 +3055,12 @@ public partial class MainWindow : Window
             "car-navi-standard" => "CarNavi_MP4_Standard",
             "car-navi-small" => "CarNavi_MP4_SmallSize",
             "car-navi-high" => "CarNavi_MP4_HighQuality",
+            ConversionPresetCatalog.IpadTabletMp41080pStandardId => "iPad_Tablet_MP4_1080p_Standard",
+            ConversionPresetCatalog.IpadTabletMp4720pCompatibleId => "iPad_Tablet_MP4_720p_Compatible",
+            ConversionPresetCatalog.IpadTabletHevc1080pHighCompressionId => "iPad_Tablet_HEVC_1080p_HighCompression",
+            ConversionPresetCatalog.AndroidTabletMp41080pStandardId => "AndroidTablet_MP4_1080p_Standard",
+            ConversionPresetCatalog.AndroidTabletMp4720pCompatibleId => "AndroidTablet_MP4_720p_Compatible",
+            ConversionPresetCatalog.AndroidTabletHevc1080pHighCompressionId => "AndroidTablet_HEVC_1080p_HighCompression",
             "dvd-standard" => "PortableDVD_MPG_Standard",
             "dvd-small" => "PortableDVD_MPG_SmallSize",
             "dvd-high" => "PortableDVD_MPG_HighQuality",
@@ -2948,6 +3426,7 @@ public partial class MainWindow : Window
         ConvertQueueButton.IsEnabled = !isDownloading;
         RetryFailedQueueButton.IsEnabled = !isDownloading;
         CancelQueueButton.IsEnabled = false;
+        SimpleCancelQueueButton.IsEnabled = false;
         QueueExecutionModeComboBox.IsEnabled = !isDownloading;
         OutputPresetComboBox.IsEnabled = !isDownloading;
         AspectModeComboBox.IsEnabled = !isDownloading && GetSelectedConversionPreset().SupportsAspectMode;
@@ -2997,6 +3476,7 @@ public partial class MainWindow : Window
         ConvertQueueButton.IsEnabled = !isConverting;
         RetryFailedQueueButton.IsEnabled = !isConverting;
         CancelQueueButton.IsEnabled = false;
+        SimpleCancelQueueButton.IsEnabled = false;
         QueueExecutionModeComboBox.IsEnabled = !isConverting;
         OutputPresetComboBox.IsEnabled = !isConverting;
         AspectModeComboBox.IsEnabled = !isConverting && GetSelectedConversionPreset().SupportsAspectMode;
@@ -3052,6 +3532,7 @@ public partial class MainWindow : Window
         TargetPeakComboBox.IsEnabled = !isConverting && PeakBoostCheckBox.IsChecked == true;
         RetryFailedQueueButton.IsEnabled = !isConverting;
         CancelQueueButton.IsEnabled = isConverting;
+        SimpleCancelQueueButton.IsEnabled = isConverting;
         UpdateDownloadButtonState();
         UpdateConvertButtonState();
         UpdateConvertQueueButtonState();
@@ -3146,6 +3627,28 @@ public partial class MainWindow : Window
     private static bool IsProcessedQueueStatus(ConversionQueueItem item)
     {
         return item.Status is "Converted" or "Downloaded" or "Completed" or "Failed" or "Skipped" or QueueStatusUnsupported;
+    }
+
+    private bool IsQueueProcessingActive()
+    {
+        return _isQueueConverting || _isSimpleModeRunning;
+    }
+
+    private static bool IsActiveQueueItem(ConversionQueueItem item)
+    {
+        if (item.Status == QueueStatusMetadataLoading)
+        {
+            return true;
+        }
+
+        return item.Status.Contains("処理中", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("ダウンロード中", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("変換中", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("キャンセル", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("Downloading", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("Converting", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("Processing", StringComparison.OrdinalIgnoreCase)
+            || item.Status.Contains("Cancel", StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpdateMainWorkspaceLayout()
@@ -3351,7 +3854,7 @@ public partial class MainWindow : Window
         return bitmap;
     }
 
-    private async Task AddDroppedTextUrlsToQueueAsync(string droppedText)
+    private async Task AddDroppedTextUrlsToQueueAsync(string droppedText, bool isSimpleModeItem = false)
     {
         var urls = GetDroppedUrls(droppedText).ToList();
         if (urls.Count == 0)
@@ -3360,10 +3863,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        await AddOnlineUrlsToQueueAsync(urls, "drag and drop");
+        await AddOnlineUrlsToQueueAsync(urls, "drag and drop", isSimpleModeItem);
     }
 
-    private async Task AddOnlineUrlsToQueueAsync(IEnumerable<string> urls, string sourceLabel)
+    private async Task AddOnlineUrlsToQueueAsync(IEnumerable<string> urls, string sourceLabel, bool isSimpleModeItem = false)
     {
         var addedCount = 0;
         var duplicateCount = 0;
@@ -3393,17 +3896,16 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var queueItem = new ConversionQueueItem
-            {
-                SourceType = "OnlineVideo",
-                Title = "読み込み中...",
-                SourcePathOrUrl = normalizedUrl,
-                Status = QueueStatusMetadataLoading,
-            };
+            var queueItem = CreateQueueItem(
+                sourceType: "OnlineVideo",
+                title: "読み込み中...",
+                sourcePathOrUrl: normalizedUrl,
+                status: QueueStatusMetadataLoading,
+                isSimpleModeItem: isSimpleModeItem);
             _conversionQueue.Add(queueItem);
             addedCount++;
             pendingMetadataItems.Add((queueItem, normalizedUrl));
-            ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+            ApplyQueueSupportStatusForAdd(queueItem, isSimpleModeItem);
             _log.Info($"Added dropped URL to queue for metadata loading: {normalizedUrl}");
         }
 
@@ -3419,7 +3921,7 @@ public partial class MainWindow : Window
                 _log.Warn($"Using fallback title for dropped URL: {fallbackTitle}");
                 queueItem.Title = fallbackTitle;
                 queueItem.Status = QueueStatusReadyWithWarning;
-                ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+                ApplyQueueSupportStatusForAdd(queueItem, isSimpleModeItem);
                 _log.Info($"Dropped URL metadata fallback is ready: {normalizedUrl}");
                 continue;
             }
@@ -3428,7 +3930,7 @@ public partial class MainWindow : Window
                 ? CreateFallbackOnlineVideoTitle(normalizedUrl)
                 : video.Title;
             queueItem.Status = QueueStatusReady;
-            ApplyQueueSupportStatus(queueItem, GetQueueExecutionMode());
+            ApplyQueueSupportStatusForAdd(queueItem, isSimpleModeItem);
             _log.Info($"Dropped URL metadata resolved: {queueItem.Title}");
         }
 
@@ -3717,6 +4219,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyQueueSupportStatusForAdd(
+        ConversionQueueItem item,
+        bool isSimpleModeItem,
+        string? executionMode = null)
+    {
+        if (isSimpleModeItem)
+        {
+            ApplySimpleModeSupportStatus(item);
+            return;
+        }
+
+        ApplyQueueSupportStatus(item, executionMode ?? GetQueueExecutionMode());
+    }
+
+    private static void ApplySimpleModeSupportStatus(ConversionQueueItem item)
+    {
+        if (item.SourceType is "OnlineVideo" or "LocalFile")
+        {
+            item.UnsupportedReason = string.Empty;
+            if (item.Status is "Pending" or QueueStatusUnsupported)
+            {
+                item.Status = QueueStatusReady;
+            }
+
+            return;
+        }
+
+        item.UnsupportedReason = string.IsNullOrWhiteSpace(item.UnsupportedReason)
+            ? UnsupportedCurrentModeReason
+            : item.UnsupportedReason;
+        item.Status = QueueStatusUnsupported;
+    }
+
     private static string GetUnsupportedReason(ConversionQueueItem item, string executionMode)
     {
         if (item.SourceType == "Unsupported")
@@ -3744,7 +4279,7 @@ public partial class MainWindow : Window
             or QueueStatusUnsupported;
     }
 
-    private void AddLocalFilesToQueue(IEnumerable<string> paths, string sourceLabel)
+    private void AddLocalFilesToQueue(IEnumerable<string> paths, string sourceLabel, bool isSimpleModeItem = false)
     {
         var addedCount = 0;
         var unsupportedCount = 0;
@@ -3757,7 +4292,7 @@ public partial class MainWindow : Window
             if (Directory.Exists(path))
             {
                 ignoredFolderCount++;
-                AddUnsupportedDroppedItem(path, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), UnsupportedFileFormatReason);
+                AddUnsupportedDroppedItem(path, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), UnsupportedFileFormatReason, isSimpleModeItem);
                 _log.Info($"Added unsupported folder drop to queue. Folder scanning is not enabled in this version: {path}");
                 continue;
             }
@@ -3765,7 +4300,7 @@ public partial class MainWindow : Window
             if (!File.Exists(path))
             {
                 unsupportedCount++;
-                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason);
+                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason, isSimpleModeItem);
                 _log.Error($"Added missing dropped file to queue as unsupported: {path}");
                 continue;
             }
@@ -3773,7 +4308,7 @@ public partial class MainWindow : Window
             if (!IsSupportedLocalVideoFile(path))
             {
                 unsupportedCount++;
-                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason);
+                AddUnsupportedDroppedItem(path, Path.GetFileNameWithoutExtension(path), UnsupportedFileFormatReason, isSimpleModeItem);
                 _log.Info($"Added unsupported file to queue: {path}");
                 continue;
             }
@@ -3785,14 +4320,13 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            _conversionQueue.Add(new ConversionQueueItem
-            {
-                SourceType = "LocalFile",
-                Title = Path.GetFileNameWithoutExtension(path),
-                SourcePathOrUrl = path,
-                Status = QueueStatusReady,
-            });
-            ApplyQueueSupportStatus(_conversionQueue[^1], executionMode);
+            _conversionQueue.Add(CreateQueueItem(
+                sourceType: "LocalFile",
+                title: Path.GetFileNameWithoutExtension(path),
+                sourcePathOrUrl: path,
+                status: QueueStatusReady,
+                isSimpleModeItem: isSimpleModeItem));
+            ApplyQueueSupportStatusForAdd(_conversionQueue[^1], isSimpleModeItem, executionMode);
             addedCount++;
             _log.Info($"Added local file to queue: {path}");
         }
@@ -3801,7 +4335,7 @@ public partial class MainWindow : Window
         _log.Info($"Added {addedCount} local file(s) to the conversion queue from {sourceLabel}. Skipped {unsupportedCount} unsupported/missing, {duplicateCount} duplicate, {ignoredFolderCount} folder item(s).");
     }
 
-    private void AddUnsupportedDroppedItem(string sourcePathOrUrl, string title, string reason)
+    private void AddUnsupportedDroppedItem(string sourcePathOrUrl, string title, string reason, bool isSimpleModeItem = false)
     {
         if (QueueContainsSource(sourcePathOrUrl))
         {
@@ -3809,14 +4343,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        _conversionQueue.Add(new ConversionQueueItem
-        {
-            SourceType = "Unsupported",
-            Title = string.IsNullOrWhiteSpace(title) ? "対象外の項目" : title,
-            SourcePathOrUrl = sourcePathOrUrl,
-            Status = QueueStatusUnsupported,
-            UnsupportedReason = reason,
-        });
+        _conversionQueue.Add(CreateQueueItem(
+            sourceType: "Unsupported",
+            title: string.IsNullOrWhiteSpace(title) ? "対象外の項目" : title,
+            sourcePathOrUrl: sourcePathOrUrl,
+            status: QueueStatusUnsupported,
+            unsupportedReason: reason,
+            isSimpleModeItem: isSimpleModeItem));
     }
 
     private bool QueueContainsSource(string sourcePathOrUrl)

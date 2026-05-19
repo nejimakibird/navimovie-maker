@@ -44,6 +44,8 @@ public sealed class ConversionQueueItem : INotifyPropertyChanged
 
     public string SourcePathOrUrl { get; init; } = string.Empty;
 
+    public bool IsSimpleModeItem { get; init; }
+
     public string DownloadedFilePath
     {
         get => _downloadedFilePath;

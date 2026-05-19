@@ -2,148 +2,191 @@
 
 ## 1. Overview
 
-NaviMovie-Maker is a Windows desktop app for preparing online video URLs and local video/audio files for practical playback targets such as car navigation systems, USB/SD-capable DVD players, and local media players.
+NaviMovie-Maker is a Windows desktop app for preparing online video URLs and local video/audio files for practical playback targets such as car navigation systems, USB/SD-capable DVD players, iPad/tablet devices, Android tablets, and local media players.
 
-The current app uses a queue-based workflow. Add URLs or local files to the `Conversion Queue`, choose an operation mode and output preset, then run the queue from top to bottom.
+The app is centered around the `Conversion Queue`. You can use Simple Mode for a minimal drop-and-convert workflow, or normal mode for explicit download, convert, and copy operations.
 
-Online metadata and downloads use `yt-dlp`. Conversion and audio processing use FFmpeg / `ffprobe`. NaviMovie-Maker can help check, download, and configure those tools, but they remain separate external tools.
-
-Simple Mode is planned, but it is not implemented yet. This README documents the currently implemented queue workflow.
+Online metadata and downloads use `yt-dlp`. Conversion and audio processing use FFmpeg / `ffprobe`. NaviMovie-Maker can check, download, and configure those tools, but they remain separate external tools.
 
 ## 2. Features
 
-- Search YouTube by keyword or load a direct video URL.
-- Drag and drop URLs into the source input or directly into the conversion queue.
+- Simple Mode: drop URLs or local files and convert them with the selected preset.
+- Normal mode: download only, download and convert, convert local files, or copy files.
+- Search YouTube by keyword or load direct video URLs.
+- Drag URLs into the source input or directly into the conversion queue.
 - Add local video and audio files with the file picker or drag/drop.
-- Process queue items with download-only, download-and-convert, convert-only, or file-copy modes.
-- Convert using Car Navi MP4, DVD Player MPG, and audio-oriented presets.
-- Choose aspect handling, numbering, original download retention, peak boost, and per-item audio normalization.
-- Reorder, remove, clear, retry failed items, and cancel active queue work.
-- Configure working, temporary, converted, and local video folders.
-- Check and automatically fetch required external tools.
-- Review logs and per-item status feedback.
+- Convert using Car Navi MP4, DVD Player MPG, iPad/tablet, Android tablet, and audio presets.
+- Per-item queue status, progress bars, overall progress, and logs.
+- Audio correction, peak boost, numbering, and original-download retention.
+- External tool checking, automatic setup support, manual tool paths, and tools-folder access.
 
-## 3. Requirements and tool setup
+## 3. Simple Mode
 
-NaviMovie-Maker depends on these external executables:
+Simple Mode is a minimal workflow for converting dropped URLs or local files with the selected output preset. URL items are downloaded to a temporary location and then converted. Local files are converted directly. Final output files are written to the Converted Folder.
 
-- `yt-dlp.exe`: required for URL metadata loading and downloading.
-- `ffmpeg.exe`: required for conversion, audio extraction, and audio adjustment.
-- `ffprobe.exe`: checked with FFmpeg and expected to be available from the same FFmpeg package.
+Simple Mode mainly exposes the output preset selector. It does not show the normal-mode operation choices such as download only, download and convert, convert only, or file copy.
 
-The app searches for tools in this order:
+During Simple Mode processing, items remain visible in the `Conversion Queue`. Progress is shown in the queue row, the overall progress display, and the log. Use the Simple Mode `キャンセル` button to stop active processing.
 
-1. Paths configured in Settings.
-2. The app's `tools` folder.
-3. The system `PATH`.
+Simple Mode is designed not to leave temporary downloaded files, cache files, or intermediate files behind as normal results.
 
-Tool support in the `ツール` menu:
+## 4. Normal Mode
 
-- `外部ツール確認`: checks `yt-dlp`, `ffmpeg`, and `ffprobe`.
-- `外部ツールを自動取得`: downloads `yt-dlp.exe` and an FFmpeg essentials package, then places `yt-dlp.exe`, `ffmpeg.exe`, and `ffprobe.exe` in the app `tools` folder.
-- `tools フォルダを開く`: opens the app's external tools folder.
-- Settings can manually specify executable paths and override download URLs.
-
-## 4. Basic usage
-
-1. Check the external tool status near the top of the window.
-2. Use `外部ツール確認` or `外部ツールを自動取得` if tools are missing.
-3. Add online videos by search, direct URL, URL drag/drop, or queue drag/drop.
-4. Add local media files with the file picker or by dragging them into `Conversion Queue`.
-5. Choose the operation mode.
-6. Choose an output preset when converting.
-7. Adjust aspect mode, numbering, audio options, and original-download retention as needed.
-8. Click `実行` to process the queue.
-
-Dropped URLs are added immediately and metadata loading begins. While loading, an item may show `情報取得中...`; if metadata fails, the item can remain with a warning so processing can retry later.
-
-Supported local file extensions are:
-
-- Video: `.mp4`, `.m4v`, `.mov`, `.avi`, `.mpg`, `.mpeg`, `.wmv`, `.mkv`, `.webm`
-- Audio: `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.wma`
-
-Folders are not scanned recursively in the current version. Unsupported drops are shown in the queue so the reason is visible.
-
-## 5. Operation modes
+Normal mode processes queue items from top to bottom using the selected operation mode.
 
 | UI label | Internal mode | URL | Local files | Main use |
 |---|---|---:|---:|---|
 | ダウンロードのみ | `Download Only` | Supported | Unsupported | Download source files from URLs. |
-| ダウンロードして変換 | `Download & Convert` | Supported | Supported | Download URLs and convert them; also convert supported local files already in the queue. |
+| ダウンロードして変換 | `Download & Convert` | Supported | Supported | Download URLs and convert them; also convert supported local files in the queue. |
 | 変換のみ | `Convert Only` | Unsupported | Supported | Convert local video/audio files. |
 | ファイルコピー | `Copy Files` | Unsupported | Supported | Copy files to the selected output folder. |
 
-Items that the selected mode cannot process remain visible as unsupported queue items. For example, local files are unsupported in download-only mode, and URLs are unsupported in convert-only and file-copy modes.
+Items that the selected mode cannot process remain visible as `対象外` unsupported queue items.
 
-## 6. Queue status display
+## 5. Adding URLs and Files
 
-The `状態` column combines status text and a progress bar.
+HTTP / HTTPS URLs can be dropped into the source input or directly into the `Conversion Queue`. Queue-dropped URLs appear immediately, then metadata loading starts through `yt-dlp`.
 
-- `情報取得中...`: metadata is being loaded for a dropped URL through `yt-dlp`.
-- `待機中`: ready and waiting for processing.
-- Processing: downloading, converting, or copying. Progress, speed, and ETA appear when the underlying tool reports them.
-- `対象外`: unsupported in the current mode, unsupported file type, folder drop, missing path, or broad URL.
-- Warning: metadata failed but the item may still be processed later.
-- Completed: `Completed`, `Converted`, or `Downloaded`.
-- Failed: `Failed` or `Convert Failed`.
-- `Skipped`: skipped due to cancellation, mode mismatch, or another blocking condition.
+While metadata is loading, the item can show `読み込み中...` and `情報取得中...`. When metadata succeeds, the video title is used for display and output filename suggestions. If metadata fails, the item remains visible with a safe fallback title and warning status so processing can retry later.
 
-The queue header and progress bar also show overall queue progress. Failed items can be retried with `失敗分を再実行`.
+YouTube single-video URLs, `youtu.be/...`, and Shorts URLs are treated as single videos. URLs such as `watch?v=...&list=...` are normalized to the single video when a video ID is present. Channel, playlist, handle, radio, and other broad URLs may be rejected or marked unsupported in normal operation to avoid unintended large downloads.
 
-## 7. Output folders
+Supported local file extensions:
 
-Defaults are created under the user's Videos folder:
+- Video: `.mp4`, `.m4v`, `.mov`, `.avi`, `.mpg`, `.mpeg`, `.wmv`, `.mkv`, `.webm`
+- Audio: `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.wma`
+
+Folders, missing paths, and unsupported extensions remain visible as unsupported queue items. Folder drops are not imported recursively.
+
+## 6. Queue Status and Progress
+
+The `状態` column shows status text with a progress bar. During conversion, NaviMovie-Maker shows percent, converted time / total duration, processing speed, and estimated remaining time when available. This helps confirm progress during long videos or high-resolution conversions.
+
+Common statuses:
+
+- `情報取得中...`: loading metadata for a dropped URL.
+- `待機中`: ready and waiting.
+- Processing / downloading / converting: active work is running.
+- `対象外`: unsupported in the current mode, unsupported file type, broad URL, or similar.
+- Warning / `注意`: metadata failed or the item needs attention but may still be processable.
+- Completed / `完了`: processing succeeded.
+- Failed / `失敗`: download, conversion, or copy failed.
+- `Skipped`: skipped due to cancellation, mode mismatch, or an earlier failure.
+
+The overall progress bar includes both completed items and the current item's partial progress.
+
+## 7. Cancellation and Deletion
+
+Active queue items cannot be removed while metadata loading, downloading, converting, processing, or canceling is still in progress. This keeps the visible queue state aligned with the underlying task. Use the `キャンセル` button to stop active processing.
+
+The Delete key and delete button both protect active items. Waiting, unsupported, warning, completed, failed, and no-longer-active canceled items can be removed normally.
+
+Queue reordering may also be disabled while processing is active.
+
+## 8. Audio Correction
+
+The `音声補正` column shows the audio correction setting applied to each queue item. Normal mode can apply per-item audio correction such as loudness normalization.
+
+Peak boost is intended to raise quiet sources toward the selected target peak without lowering already-loud sources. Advanced pre-analysis gain adjustment similar to dedicated transcoding tools is not documented as an implemented feature yet.
+
+## 9. Output Presets
+
+Visible presets can be customized in Settings. Simple Mode and normal mode use the shared preset list.
+
+### Car Navi MP4
+
+- `Car Navi MP4 - Current Compatibility`
+- `Car Navi MP4 - Standard`
+- `Car Navi MP4 - Small Size`
+- `Car Navi MP4 - High Quality`
+
+Practical MP4 / H.264 / AAC presets for car navigation playback. They are not universal compatibility guarantees.
+
+### DVD Player MPG
+
+- `Portable DVD Player MPG - Small Size (MP2 audio)`
+- `Portable DVD Player MPG - Standard (MP2 audio)`
+- `Portable DVD Player MPG - High Quality (MP2 audio)`
+
+These create `.mpg` files for USB/SD-capable DVD players. They do not author DVD-Video disc structures.
+
+### iPad / Tablet
+
+- `iPad / タブレット MP4 1080p 標準`: H.264 MP4 for current/common tablet devices.
+- `iPad / タブレット MP4 720p 互換`: H.264 MP4 for older devices or smaller files.
+- `iPad / タブレット HEVC 1080p 高圧縮`: HEVC MP4 for newer devices and smaller files.
+
+### Android Tablet
+
+- `Androidタブレット MP4 1080p 標準`: H.264 MP4 for current/common Android tablets.
+- `Androidタブレット MP4 720p 互換`: H.264 MP4 for older devices or smaller files.
+- `Androidタブレット HEVC 1080p 高圧縮`: HEVC MP4 for newer devices and smaller files.
+
+H.264 MP4 presets are the safer compatibility choice. HEVC presets are high-compression presets for newer devices and may not play on older devices or apps.
+
+### Audio Presets
+
+Audio output presets include MP4 AAC, MP3, M4A AAC, WAV PCM, FLAC, OGG Vorbis, and WMA variants.
+
+## 10. Folders and Output
+
+Default folders are created under the user's Videos folder:
 
 - Working Folder: `Videos\NaviMovie-Maker\work`
 - Temporary Folder: `Videos\NaviMovie-Maker\temp`
 - Converted Folder: `Videos\NaviMovie-Maker\converted`
 - Local Video Folder: `Videos\NaviMovie-Maker\local`
 
-Settings can change these folders, and missing folders are created when settings are saved.
+Settings can change these folders. When `出力形式ごとにサブフォルダを作成` is enabled, output is grouped into preset or mode-specific subfolders.
 
-Download-only mode writes to the Working Folder. Download-and-convert mode uses the Temporary Folder for source downloads unless `DL元を残す` is enabled. Converted files and copied files go to the Converted Folder by default, or to the current session output folder selected with `出力先...`.
+Simple Mode writes final files to the Converted Folder. Normal mode can also use the session output folder selected with `出力先...`.
 
-When `出力形式ごとにサブフォルダを作成` is enabled, outputs are grouped into preset or mode-specific subfolders.
+## 11. External Tools
 
-## 8. Presets
+NaviMovie-Maker uses:
 
-Visible output presets can be customized in Settings. Default visible presets include:
+- `yt-dlp.exe` for URL metadata and downloads.
+- `ffmpeg.exe` for video/audio conversion and audio processing.
+- `ffprobe.exe` for FFmpeg-related checks and media information.
 
-- `Car Navi MP4 - Current Compatibility`
-- `Car Navi MP4 - Standard`
-- `Car Navi MP4 - Small Size`
-- `Portable DVD Player MPG - Standard (MP2 audio)`
-- `Audio MP4 AAC Only - High (256 kbps)`
-- `MP3 - High (320 kbps)`
-- `MP3 - Medium (192 kbps)`
-- `M4A AAC - High (256 kbps)`
+The `ツール` menu provides:
 
-Additional implemented presets include Car Navi MP4 and Portable DVD Player MPG quality variants, plus MP4 AAC, MP3, M4A AAC, WAV PCM, FLAC, OGG Vorbis, and WMA audio outputs.
+- `外部ツール確認`: check configured paths, the app `tools` folder, then `PATH`.
+- `外部ツールを自動取得`: download `yt-dlp.exe` and an FFmpeg essentials package, then place the executables in the `tools` folder.
+- `tools フォルダを開く`: open the app tools folder.
+- Settings: manually specify executable paths and download URLs.
 
-Car Navi MP4 and DVD Player MPG presets are practical presets, not guarantees that every device will play the output. DVD Player MPG creates `.mpg` files for USB/SD playback devices; it does not author DVD-Video disc structures.
+Download availability depends on `yt-dlp` and the target site. Site changes, terms, regional limits, login requirements, or access restrictions may prevent downloads.
 
-## 9. Notes and limitations
+## 12. Notes and Limitations
 
-- Users are responsible for complying with copyright law and each video service's terms.
-- Download availability depends on `yt-dlp` and the target site.
-- Playback compatibility depends on the target device, firmware, storage, codec support, bitrate limits, and playback app.
-- Car Navi MP4 and DVD Player MPG are practical starting points, not universal compatibility promises.
-- `yt-dlp`, FFmpeg, and `ffprobe` are external tools. NaviMovie-Maker provides setup support, but their behavior and licenses remain separate.
+- Users are responsible for complying with copyright law, video service terms, and rights-holder permissions.
+- NaviMovie-Maker does not encourage saving, converting, or redistributing content without the necessary rights.
+- Playback compatibility depends on device codec support, resolution, bitrate, file size limits, storage format, firmware, and playback app.
+- Presets are practical starting points, not guarantees for every device.
+- HEVC is high-compression but less broadly compatible than H.264.
+- `yt-dlp`, FFmpeg, and `ffprobe` are external tools with their own behavior, licenses, and release cycles.
 - Folder drag/drop does not recursively import files.
-- Broad URLs such as channels or playlists may be rejected or shown as unsupported in normal queue URL handling.
+- Playlist batch download and full channel download are not implemented in normal operation.
+- Hardware GPU encoding is not treated as a default implemented feature.
 - Physical playback order on SD cards or USB drives is handled outside NaviMovie-Maker.
 
-## 10. Development status / roadmap
+## 13. Development Status
 
 Implemented:
 
-- Queue-based workflow
+- Simple Mode
+- Queue-based normal workflow
 - URL search, direct URL loading, and URL drag/drop
 - Local file queueing
 - Download, conversion, copy, retry, cancel, status, and logging
+- Detailed queue progress, unsupported-item display, and warning display
 - External tool checks and built-in setup support
 - Folder, preset visibility, and basic conversion settings
 
-Planned:
+Not implemented or future work:
 
-- Simple Mode is planned for a future workflow, but it is not implemented yet.
+- Pro Mode
+- Playlist batch download
+- Full channel download
+- Advanced pre-analysis audio gain adjustment
