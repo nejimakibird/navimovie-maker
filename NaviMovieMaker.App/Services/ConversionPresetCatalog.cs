@@ -3,6 +3,7 @@ namespace NaviMovieMaker.App.Services;
 public static class ConversionPresetCatalog
 {
     public const string CurrentCompatibilityId = "car-navi-current";
+    public const string CarNaviStandardId = "car-navi-standard";
     public const string AudioMp4AacOnlyHighId = "audio-mp4-aac-only-high";
     public const string IpadTabletMp41080pStandardId = "ipad-tablet-mp4-1080p-standard";
     public const string IpadTabletMp4720pCompatibleId = "ipad-tablet-mp4-720p-compatible";
@@ -37,7 +38,7 @@ public static class ConversionPresetCatalog
                 true,
                 false),
             CreateCarNaviMp4("car-navi-small", "Car Navi MP4 - Small Size", 640, 360, 2000, 3000, 4000),
-            CreateCarNaviMp4("car-navi-standard", "Car Navi MP4 - Standard", 720, 480, 4000, 5000, 8000),
+            CreateCarNaviMp4(CarNaviStandardId, "Car Navi MP4 - Standard", 720, 480, 4000, 5000, 8000),
             CreateCarNaviMp4("car-navi-high", "Car Navi MP4 - High Quality", 720, 480, 5000, 6000, 10000),
             CreateTabletMp4(IpadTabletMp41080pStandardId, "iPad / タブレット MP4 1080p 標準", 1920, 1080, 6000, 8000, 12000, 192, "high", "4.1"),
             CreateTabletMp4(IpadTabletMp4720pCompatibleId, "iPad / タブレット MP4 720p 互換", 1280, 720, 3000, 4000, 8000, 128, "main", "3.1"),
@@ -73,7 +74,7 @@ public static class ConversionPresetCatalog
         return
         [
             CurrentCompatibilityId,
-            "car-navi-standard",
+            CarNaviStandardId,
             "car-navi-small",
             IpadTabletMp41080pStandardId,
             IpadTabletMp4720pCompatibleId,

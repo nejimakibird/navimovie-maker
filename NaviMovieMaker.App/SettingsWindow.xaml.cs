@@ -93,6 +93,7 @@ public partial class SettingsWindow : Window
             AspectMode = Settings.AspectMode,
             KeepOriginalDownloadedFiles = Settings.KeepOriginalDownloadedFiles,
             PeakBoost = Settings.PeakBoost,
+            SimpleModeEnabled = Settings.SimpleModeEnabled,
             TargetPeakDb = Settings.TargetPeakDb,
             StartupLayout = StartupLayoutComboBox.SelectedValue?.ToString() ?? "QueueFocus",
             LastCandidatesExpanded = Settings.LastCandidatesExpanded,
@@ -108,7 +109,14 @@ public partial class SettingsWindow : Window
             YtDlpDownloadUrl = YtDlpDownloadUrlTextBox.Text.Trim(),
             FfmpegDownloadUrl = FfmpegDownloadUrlTextBox.Text.Trim(),
             VisibleOutputPresetIds = _visiblePresets.Select(static preset => preset.Id).ToList(),
+            KnownOutputPresetIds = ConversionPresetCatalog.GetPresets().Select(static preset => preset.Id).ToList(),
         };
+
+        if (settings.VisibleOutputPresetIds.Count > 0
+            && !settings.VisibleOutputPresetIds.Contains(settings.OutputPresetId, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.OutputPresetId = settings.VisibleOutputPresetIds[0];
+        }
 
         var validationError = Validate(settings);
         if (validationError is not null)
@@ -295,6 +303,11 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(settings.LocalVideoFolder))
         {
             return "ローカル動画フォルダは必須です。";
+        }
+
+        if (settings.VisibleOutputPresetIds.Count == 0)
+        {
+            return "少なくとも1つの出力プリセットを表示してください。";
         }
 
         if (!IsExistingExecutableOrEmpty(settings.YtDlpPath, "yt-dlp.exe"))

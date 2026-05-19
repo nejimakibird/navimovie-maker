@@ -72,12 +72,15 @@ public partial class MainWindow : Window
     private bool _isConverting;
     private bool _isQueueConverting;
     private bool _isSimpleModeRunning;
+    private bool _isInitializingUi;
     private bool _isApplyingPersistedUiOptions;
+    private bool _hasUserChangedOutputPreset;
     private bool? _preSimpleCandidatesExpanded;
     private bool? _preSimpleLogExpanded;
 
     public MainWindow()
     {
+        _isInitializingUi = true;
         InitializeComponent();
         _settings = _settingsService.Load(out var settingsWarning);
         _externalToolService.EnsureToolsFolder();
@@ -110,6 +113,7 @@ public partial class MainWindow : Window
         ApplyStartupRowLayout();
         ApplySimpleModeUiState(restoreNormalLayout: false);
         UpdateSimpleModeStatus();
+        _isInitializingUi = false;
         _log.Info("Application started.");
         _log.Info("SD card copying and playback order sorting are handled outside NaviMovie-Maker, for example with Explorer and UMSSort.");
     }
@@ -840,6 +844,11 @@ public partial class MainWindow : Window
 
     private void OutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        if (!_isInitializingUi && !_isApplyingPersistedUiOptions)
+        {
+            _hasUserChangedOutputPreset = true;
+        }
+
         SyncPresetSelection(OutputPresetComboBox, SimpleOutputPresetComboBox);
         UpdateAspectModeSelector();
         SavePersistedUiOptions();
@@ -847,7 +856,13 @@ public partial class MainWindow : Window
 
     private void SimpleOutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        if (!_isInitializingUi && !_isApplyingPersistedUiOptions)
+        {
+            _hasUserChangedOutputPreset = true;
+        }
+
         SyncPresetSelection(SimpleOutputPresetComboBox, OutputPresetComboBox);
+        SavePersistedUiOptions();
     }
 
     private static void SyncPresetSelection(
@@ -2673,20 +2688,25 @@ public partial class MainWindow : Window
 
     private void SavePersistedUiOptions()
     {
-        if (_isApplyingPersistedUiOptions || _settings is null)
+        if (_isInitializingUi || _isApplyingPersistedUiOptions || _settings is null)
         {
             return;
         }
 
         _settings.RunMode = GetQueueExecutionMode();
-        _settings.OutputPresetId = OutputPresetComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem presetItem
-            ? presetItem.Tag?.ToString() ?? ConversionPresetCatalog.GetDefault().Id
-            : ConversionPresetCatalog.GetDefault().Id;
+        if (_hasUserChangedOutputPreset)
+        {
+            _settings.OutputPresetId = OutputPresetComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem presetItem
+                ? presetItem.Tag?.ToString() ?? _settings.OutputPresetId
+                : _settings.OutputPresetId;
+        }
+
         _settings.AspectMode = GetSelectedAspectMode();
         _settings.KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true;
         _settings.PeakBoost = PeakBoostCheckBox.IsChecked == true;
         _settings.SimpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
         _settings.TargetPeakDb = GetSelectedTargetPeakDb();
+        _settings.KnownOutputPresetIds = ConversionPresetCatalog.GetPresets().Select(static preset => preset.Id).ToList();
         SaveLastUsedLayoutState();
 
         try

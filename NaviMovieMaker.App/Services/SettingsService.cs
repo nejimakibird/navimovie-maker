@@ -34,10 +34,23 @@ public sealed class SettingsService
                 return CreateDefault();
             }
 
-            NormalizeDownloadProfile(settings);
-            NormalizeVisibleOutputPresets(settings);
-            NormalizeUiOptions(settings);
-            NormalizeStartupLayout(settings);
+            var normalized = false;
+            normalized |= NormalizeDownloadProfile(settings);
+            normalized |= NormalizeVisibleOutputPresets(settings);
+            normalized |= NormalizeUiOptions(settings);
+            normalized |= NormalizeStartupLayout(settings);
+            if (normalized)
+            {
+                try
+                {
+                    Save(settings);
+                }
+                catch (Exception ex)
+                {
+                    warningMessage = $"Settings were normalized but could not be saved. {ex.Message}";
+                }
+            }
+
             return settings;
         }
         catch (Exception ex)
@@ -91,6 +104,7 @@ public sealed class SettingsService
             YtDlpDownloadUrl = ExternalToolService.DefaultYtDlpDownloadUrl,
             FfmpegDownloadUrl = ExternalToolService.DefaultFfmpegDownloadUrl,
             VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList(),
+            KnownOutputPresetIds = ConversionPresetCatalog.GetPresets().Select(static preset => preset.Id).ToList(),
         };
     }
 
@@ -102,14 +116,22 @@ public sealed class SettingsService
             && !string.IsNullOrWhiteSpace(settings.LocalVideoFolder);
     }
 
-    private static void NormalizeVisibleOutputPresets(AppSettings settings)
+    private static bool NormalizeVisibleOutputPresets(AppSettings settings)
     {
-        var knownIds = ConversionPresetCatalog.GetPresets()
+        var originalVisibleIds = (settings.VisibleOutputPresetIds ?? []).ToList();
+        var originalKnownIds = (settings.KnownOutputPresetIds ?? []).ToList();
+        var catalogIds = ConversionPresetCatalog.GetPresets()
             .Select(static preset => preset.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToList();
+        var catalogIdSet = catalogIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        settings.VisibleOutputPresetIds = settings.VisibleOutputPresetIds
-            .Where(knownIds.Contains)
+        settings.VisibleOutputPresetIds = (settings.VisibleOutputPresetIds ?? [])
+            .Where(catalogIdSet.Contains)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var previouslyKnownIds = (settings.KnownOutputPresetIds ?? [])
+            .Where(catalogIdSet.Contains)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -118,25 +140,43 @@ public sealed class SettingsService
             settings.VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList();
         }
 
-        foreach (var tabletPresetId in ConversionPresetCatalog.GetTabletPresetIds())
+        var defaultVisibleIdsToMerge = previouslyKnownIds.Count == 0
+            ? ConversionPresetCatalog.GetTabletPresetIds()
+            : ConversionPresetCatalog.GetDefaultVisiblePresetIds();
+
+        foreach (var presetId in defaultVisibleIdsToMerge)
         {
-            if (!settings.VisibleOutputPresetIds.Contains(tabletPresetId, StringComparer.OrdinalIgnoreCase))
+            if (!catalogIdSet.Contains(presetId))
             {
-                settings.VisibleOutputPresetIds.Add(tabletPresetId);
+                continue;
+            }
+
+            if (!previouslyKnownIds.Contains(presetId, StringComparer.OrdinalIgnoreCase)
+                && !settings.VisibleOutputPresetIds.Contains(presetId, StringComparer.OrdinalIgnoreCase))
+            {
+                settings.VisibleOutputPresetIds.Add(presetId);
             }
         }
+
+        settings.KnownOutputPresetIds = catalogIds;
+        return !SequenceEqualIgnoreCase(originalVisibleIds, settings.VisibleOutputPresetIds)
+            || !SequenceEqualIgnoreCase(originalKnownIds, settings.KnownOutputPresetIds);
     }
 
-    private static void NormalizeDownloadProfile(AppSettings settings)
+    private static bool NormalizeDownloadProfile(AppSettings settings)
     {
         if (!DownloadProfileCatalog.IsKnownProfile(settings.DownloadProfile))
         {
             settings.DownloadProfile = DownloadProfileCatalog.AutoId;
+            return true;
         }
+
+        return false;
     }
 
-    private static void NormalizeUiOptions(AppSettings settings)
+    private static bool NormalizeUiOptions(AppSettings settings)
     {
+        var changed = false;
         string[] knownRunModes =
         [
             "Download Only",
@@ -148,6 +188,7 @@ public sealed class SettingsService
         if (!knownRunModes.Contains(settings.RunMode, StringComparer.OrdinalIgnoreCase))
         {
             settings.RunMode = "Download & Convert";
+            changed = true;
         }
 
         var knownPresetIds = ConversionPresetCatalog.GetPresets()
@@ -155,7 +196,11 @@ public sealed class SettingsService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!knownPresetIds.Contains(settings.OutputPresetId))
         {
-            settings.OutputPresetId = ConversionPresetCatalog.GetDefault().Id;
+            settings.OutputPresetId = settings.VisibleOutputPresetIds.FirstOrDefault(knownPresetIds.Contains)
+                ?? (knownPresetIds.Contains(ConversionPresetCatalog.CarNaviStandardId)
+                    ? ConversionPresetCatalog.CarNaviStandardId
+                    : ConversionPresetCatalog.GetDefault().Id);
+            changed = true;
         }
 
         string[] knownAspectModes =
@@ -167,16 +212,20 @@ public sealed class SettingsService
         if (!knownAspectModes.Contains(settings.AspectMode, StringComparer.OrdinalIgnoreCase))
         {
             settings.AspectMode = "Keep aspect ratio + padding";
+            changed = true;
         }
 
         double[] knownTargetPeaks = [-1.0, -3.0, -6.0];
         if (!knownTargetPeaks.Contains(settings.TargetPeakDb))
         {
             settings.TargetPeakDb = -1.0;
+            changed = true;
         }
+
+        return changed;
     }
 
-    private static void NormalizeStartupLayout(AppSettings settings)
+    private static bool NormalizeStartupLayout(AppSettings settings)
     {
         string[] knownStartupLayouts =
         [
@@ -191,10 +240,18 @@ public sealed class SettingsService
         if (normalizedLayout is null)
         {
             settings.StartupLayout = "QueueFocus";
-            return;
+            return true;
         }
 
+        var changed = !string.Equals(settings.StartupLayout, normalizedLayout, StringComparison.Ordinal);
         settings.StartupLayout = normalizedLayout;
+        return changed;
+    }
+
+    private static bool SequenceEqualIgnoreCase(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        return left.Count == right.Count
+            && left.Zip(right).All(pair => string.Equals(pair.First, pair.Second, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string GetVideosFolder()

@@ -57,6 +57,8 @@ public sealed class AppSettings
     public List<string> VisibleOutputPresetIds { get; set; } =
         Services.ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList();
 
+    public List<string> KnownOutputPresetIds { get; set; } = [];
+
     public AppSettings Clone()
     {
         return new AppSettings
@@ -87,7 +89,8 @@ public sealed class AppSettings
             FfprobePath = FfprobePath,
             YtDlpDownloadUrl = YtDlpDownloadUrl,
             FfmpegDownloadUrl = FfmpegDownloadUrl,
-            VisibleOutputPresetIds = VisibleOutputPresetIds.ToList(),
+            VisibleOutputPresetIds = (VisibleOutputPresetIds ?? []).ToList(),
+            KnownOutputPresetIds = (KnownOutputPresetIds ?? []).ToList(),
         };
     }
 }
