@@ -164,6 +164,18 @@ H.265/HEVC や AV1 などの高圧縮コーデックは、画質を保ちなが�
 - H.265/HEVC、AV1 などの高圧縮コーデックは新しい機器では有効な場合がありますが、古い車載ナビ、DVD プレイヤー、タブレットでは再生できないことがあります。互換性重視なら H.264 + AAC などの一般的な形式を推奨します。
 - yt-dlp、FFmpeg、ffprobe は外部ツールです。各ツールの仕様、対応状況、ライセンスはそれぞれのプロジェクトに従います。
 
+## 作者への連絡先
+
+作者: nejimakibird
+Webサイト: https://ooojouhoukan.truthlr.com/
+GitHub: https://github.com/nejimakibird/NaviMovie-Maker
+お問い合わせ:
+不具合報告や要望は、GitHub Issues または作者Webサイトのお問い合わせフォームからご連絡ください。
+
+## 取り扱い種別
+
+フリーソフト
+
 ## ライセンス
 
 MIT License

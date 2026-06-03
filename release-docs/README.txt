@@ -239,7 +239,30 @@ H.265/HEVC や AV1 などの高圧縮コーデックは、画質を保ちなが�
 - yt-dlp、FFmpeg、ffprobe は外部ツールです。各ツールの仕様、対応状況、ライセンスはそれぞれのプロジェクトに従います。
 
 
-8. ライセンス
+8. 作者・連絡先
+-------------
+
+作者:
+nejimakibird
+
+Webサイト:
+https://ooojouhoukan.truthlr.com/
+
+GitHub:
+https://github.com/nejimakibird/NaviMovie-Maker
+
+GitHub Issues:
+https://github.com/nejimakibird/NaviMovie-Maker/issues
+
+不具合報告、要望、質問などは、GitHub Issues または作者Webサイトのお問い合わせフォームからご連絡ください。
+
+9. 取り扱い種別
+-------------
+
+フリーソフト
+
+10. ライセンス
 -------------
 
 MIT License
+
