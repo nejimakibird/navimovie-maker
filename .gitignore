@@ -4,6 +4,9 @@ obj/
 Debug/
 Release/
 publish/
+model/.obsidian/
+model/exports/
+
 
 # Visual Studio / VS Code
 .vs/
