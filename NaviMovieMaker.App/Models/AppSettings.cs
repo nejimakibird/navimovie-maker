@@ -32,7 +32,7 @@ public sealed class AppSettings
 
     public bool LastCandidatesExpanded { get; set; }
 
-    public bool LastLogExpanded { get; set; } = true;
+    public bool LastLogExpanded { get; set; }
 
     public double LastWindowWidth { get; set; }
 
