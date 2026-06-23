@@ -6,9 +6,11 @@ URL やローカルファイルを `Conversion Queue` に追加し、まとめ�
 
 ## ダウンロード
 
-GitHub Releases から入手する場合は、アプリ本体の ZIP ファイルをダウンロードしてください。
+NaviMovie-Maker は GitHub Releases または Vector から入手できます。必ず公式配布元からダウンロードしてください。
 
-`Source code (zip)` や `Source code (tar.gz)` は、開発者向けのソースコードです。通常利用ではアプリ本体として起動できないため、選ばないでください。
+GitHub Releases から入手する場合は、アプリ本体の ZIP ファイルをダウンロードしてください。`Source code (zip)` や `Source code (tar.gz)` は、開発者向けのソースコードです。通常利用ではアプリ本体として起動できないため、選ばないでください。
+
+NaviMovie-Maker は個人開発のアプリであり、現時点ではコード署名を行っていません。そのため、GitHub Releases や Vector などの公式配布元から入手した場合でも、Windows SmartScreen や Smart App Control により警告が表示される場合があります。
 
 ## 主な機能
 

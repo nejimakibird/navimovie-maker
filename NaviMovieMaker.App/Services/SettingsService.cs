@@ -100,7 +100,7 @@ public sealed class SettingsService
             TargetPeakDb = -1.0,
             StartupLayout = "QueueFocus",
             LastCandidatesExpanded = false,
-            LastLogExpanded = true,
+            LastLogExpanded = false,
             YtDlpDownloadUrl = ExternalToolService.DefaultYtDlpDownloadUrl,
             FfmpegDownloadUrl = ExternalToolService.DefaultFfmpegDownloadUrl,
             VisibleOutputPresetIds = ConversionPresetCatalog.GetDefaultVisiblePresetIds().ToList(),

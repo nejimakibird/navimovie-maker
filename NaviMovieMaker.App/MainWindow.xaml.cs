@@ -377,9 +377,14 @@ public partial class MainWindow : Window
         }
 
         var simpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
+        SimpleModePanel.Visibility = simpleModeEnabled ? Visibility.Visible : Visibility.Collapsed;
         NormalQueueOptionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
         NormalAudioOptionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
-        NormalQueueActionsPanel.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        NormalQueueActionsPanel.Visibility = Visibility.Visible;
+        ConvertQueueButton.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        RetryFailedQueueButton.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        CancelQueueButton.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
+        OpenConvertedFolderButton.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
         CandidatesExpander.Visibility = simpleModeEnabled ? Visibility.Collapsed : Visibility.Visible;
 
         if (simpleModeEnabled)
@@ -387,7 +392,6 @@ public partial class MainWindow : Window
             _preSimpleCandidatesExpanded ??= CandidatesExpander.IsExpanded;
             _preSimpleLogExpanded ??= LogExpander.IsExpanded;
             ConversionQueueExpander.IsExpanded = true;
-            LogExpander.IsExpanded = true;
         }
         else if (restoreNormalLayout)
         {
@@ -412,10 +416,12 @@ public partial class MainWindow : Window
             VideoListWorkRow.Height = GridLength.Auto;
             QueueWorkRow.MinHeight = 180;
             QueueWorkRow.Height = new GridLength(3, GridUnitType.Star);
-            LogWorkRow.MinHeight = 140;
-            LogWorkRow.Height = new GridLength(1, GridUnitType.Star);
+            LogWorkRow.MinHeight = LogExpander.IsExpanded ? 140 : 0;
+            LogWorkRow.Height = LogExpander.IsExpanded
+                ? new GridLength(1, GridUnitType.Star)
+                : GridLength.Auto;
             CandidateQueueGridSplitter.Visibility = Visibility.Collapsed;
-            LogGridSplitter.Visibility = Visibility.Visible;
+            LogGridSplitter.Visibility = LogExpander.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -2743,7 +2749,7 @@ public partial class MainWindow : Window
             default:
                 CandidatesExpander.IsExpanded = false;
                 ConversionQueueExpander.IsExpanded = true;
-                LogExpander.IsExpanded = true;
+                LogExpander.IsExpanded = false;
                 break;
         }
     }
@@ -3678,17 +3684,20 @@ public partial class MainWindow : Window
             return;
         }
 
-        VideoListWorkRow.MinHeight = CandidatesExpander.IsExpanded ? 120 : 0;
-        VideoListWorkRow.Height = CandidatesExpander.IsExpanded
+        var candidatesVisible = CandidatesExpander.Visibility == Visibility.Visible && CandidatesExpander.IsExpanded;
+        var queueVisible = ConversionQueueExpander.Visibility == Visibility.Visible && ConversionQueueExpander.IsExpanded;
+
+        VideoListWorkRow.MinHeight = candidatesVisible ? 120 : 0;
+        VideoListWorkRow.Height = candidatesVisible
             ? new GridLength(1, GridUnitType.Star)
             : GridLength.Auto;
 
-        QueueWorkRow.MinHeight = ConversionQueueExpander.IsExpanded ? 120 : 0;
-        QueueWorkRow.Height = ConversionQueueExpander.IsExpanded
+        QueueWorkRow.MinHeight = queueVisible ? 120 : 0;
+        QueueWorkRow.Height = queueVisible
             ? new GridLength(1, GridUnitType.Star)
             : GridLength.Auto;
 
-        CandidateQueueGridSplitter.Visibility = CandidatesExpander.IsExpanded && ConversionQueueExpander.IsExpanded
+        CandidateQueueGridSplitter.Visibility = candidatesVisible && queueVisible
             ? Visibility.Visible
             : Visibility.Collapsed;
     }

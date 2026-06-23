@@ -100,11 +100,18 @@
             <TextBlock x:Name="ExternalToolsStatusTextBlock"
                        Text="External tools: Check required"
                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-            <GroupBox Header="Simple Mode"
-                      Margin="0,10,0,0">
+            <CheckBox x:Name="SimpleModeCheckBox"
+                      Content="Simple Mode"
+                      VerticalAlignment="Center"
+                      Margin="0,10,0,0"
+                      Checked="SimpleModeCheckBox_CheckedChanged"
+                      Unchecked="SimpleModeCheckBox_CheckedChanged" />
+            <GroupBox x:Name="SimpleModePanel"
+                      Header="Simple Mode"
+                      Margin="0,8,0,0"
+                      Visibility="Collapsed">
                 <Grid Margin="10">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="260" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -113,20 +120,13 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <CheckBox x:Name="SimpleModeCheckBox"
-                              Grid.Column="0"
-                              Content="Simple Mode"
-                              VerticalAlignment="Center"
-                              Margin="0,0,12,0"
-                              Checked="SimpleModeCheckBox_CheckedChanged"
-                              Unchecked="SimpleModeCheckBox_CheckedChanged" />
                     <ComboBox x:Name="SimpleOutputPresetComboBox"
-                              Grid.Column="1"
+                              Grid.Column="0"
                               ToolTip="Simple Modeで使う出力形式を選びます。"
                               MinHeight="30"
                               Margin="0,0,12,0"
                               SelectionChanged="SimpleOutputPresetComboBox_SelectionChanged" />
-                    <Border Grid.Column="2"
+                    <Border Grid.Column="1"
                             x:Name="SimpleModeDropArea"
                             AllowDrop="True"
                             BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
@@ -142,7 +142,7 @@
                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
                     </Border>
                     <Button x:Name="SimpleCancelQueueButton"
-                            Grid.Column="3"
+                            Grid.Column="2"
                             Content="キャンセル"
                             ToolTip="現在実行中の処理を中断します。"
                             IsEnabled="False"
@@ -150,7 +150,7 @@
                             MinHeight="30"
                             Margin="0,0,8,0"
                             Click="SimpleCancelQueueButton_Click" />
-                    <Button Grid.Column="4"
+                    <Button Grid.Column="3"
                             Content="変換済みフォルダ"
                             MinWidth="130"
                             MinHeight="30"
