@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Text.Json;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
     private const string UnsupportedUrlModeReason = "URLはこのモードでは処理対象外です。";
     private const string UnsupportedLocalFileModeReason = "ローカルファイルはこのモードでは処理対象外です。";
     private const string UnsupportedFileFormatReason = "対応していないファイル形式です。";
+    private const string MissingLocalFileReason = "保存時に指定されていたローカルファイルが見つかりません。";
     private const string UnsafeOnlineUrlReason = "このURLはチャンネルまたはプレイリストの可能性があります。通常モードでは単体動画URLを指定してください。";
     private static readonly HttpClient ThumbnailHttpClient = new();
     private string? _lastQueueSortMemberPath;
@@ -49,6 +51,7 @@ public partial class MainWindow : Window
     private readonly VideoDownloadService _videoDownloadService = new();
     private readonly VideoConversionService _videoConversionService = new();
     private readonly SettingsService _settingsService = new();
+    private readonly ConversionPlaylistService _playlistService = new();
     private readonly AppLog _log = new();
     private readonly ObservableCollection<LogEntry> _logEntries = new();
     private readonly ObservableCollection<VideoListItem> _videos = new();
@@ -156,6 +159,309 @@ public partial class MainWindow : Window
     private void OpenToolsFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
         OpenConfiguredFolder(_externalToolService.ToolsFolder, "tools フォルダ");
+    }
+
+    private void SavePlaylistMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_conversionQueue.Count == 0)
+        {
+            MessageBox.Show(this, "保存する変換キューがありません。", "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        ConversionQueueDataGrid.CommitEdit();
+        ConversionQueueDataGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
+
+        var defaultFolder = GetPlaylistFolder();
+        try
+        {
+            Directory.CreateDirectory(defaultFolder);
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"プレイリスト保存先を作成できませんでした。{ex.Message}");
+            MessageBox.Show(this, ex.Message, "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "プレイリストを保存",
+            InitialDirectory = defaultFolder,
+            FileName = $"playlist-{DateTime.Now:yyyyMMdd-HHmmss}.nmm-playlist.json",
+            DefaultExt = ".nmm-playlist.json",
+            AddExtension = true,
+            Filter = "NaviMovie-Maker プレイリスト|*.nmm-playlist.json|JSON ファイル|*.json",
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            _playlistService.Save(dialog.FileName, CreatePlaylist(dialog.FileName));
+            RememberPlaylistFolder(dialog.FileName);
+            _log.Success($"プレイリストを保存しました: {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"プレイリストを保存できませんでした。{ex.Message}");
+            MessageBox.Show(this, ex.Message, "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenPlaylistMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsQueueProcessingActive())
+        {
+            MessageBox.Show(this, "キュー処理中はプレイリストを開けません。先にキャンセルするか、処理が完了してから開いてください。", "プレイリストを開く", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "プレイリストを開く",
+            InitialDirectory = GetPlaylistFolder(),
+            Filter = "NaviMovie-Maker プレイリスト|*.nmm-playlist.json|JSON ファイル|*.json",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        ConversionPlaylist playlist;
+        try
+        {
+            playlist = _playlistService.Load(dialog.FileName);
+            ValidatePlaylist(playlist);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            _log.Error($"プレイリストを開けませんでした。{ex.Message}");
+            MessageBox.Show(this, ex.Message, "プレイリストを開く", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        if (_conversionQueue.Count > 0)
+        {
+            var result = MessageBox.Show(
+                this,
+                "現在の変換キューを置き換えてプレイリストを開きますか？",
+                "プレイリストを開く",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+
+        ApplyPlaylist(playlist);
+        RememberPlaylistFolder(dialog.FileName);
+        _log.Success($"プレイリストを開きました: {dialog.FileName} ({_conversionQueue.Count} 件)");
+    }
+
+    private ConversionPlaylist CreatePlaylist(string filePath)
+    {
+        var now = DateTimeOffset.Now;
+        return new ConversionPlaylist
+        {
+            AppVersion = GetType().Assembly.GetName().Version?.ToString() ?? string.Empty,
+            Name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(filePath)),
+            CreatedAt = now,
+            UpdatedAt = now,
+            OutputPresetId = GetSelectedComboBoxTag(OutputPresetComboBox) ?? string.Empty,
+            SimpleModeEnabled = SimpleModeCheckBox.IsChecked == true,
+            OperationMode = GetQueueExecutionMode(),
+            AspectMode = GetSelectedAspectMode(),
+            KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true,
+            PeakBoost = PeakBoostCheckBox.IsChecked == true,
+            TargetPeakDb = GetSelectedTargetPeakDb(),
+            NumberPrefixStart = GetNumberPrefixStartNumber(),
+            Items = _conversionQueue
+                .OrderBy(static item => item.Order)
+                .Select(item => new ConversionPlaylistItem
+                {
+                    SourceKind = item.SourceType,
+                    SourcePathOrUrl = item.SourcePathOrUrl,
+                    Title = item.Title,
+                    OutputBaseName = item.Title,
+                    OriginalUrl = item.SourceType == "OnlineVideo" ? item.SourcePathOrUrl : string.Empty,
+                    LocalFilePath = item.SourceType == "LocalFile" ? item.SourcePathOrUrl : string.Empty,
+                    Notes = item.IsUnsupported ? item.UnsupportedReason : null,
+                    IsSimpleModeItem = item.IsSimpleModeItem,
+                    AudioAdjustmentMode = item.AudioAdjustmentMode,
+                })
+                .ToList(),
+        };
+    }
+
+    private static void ValidatePlaylist(ConversionPlaylist playlist)
+    {
+        if (playlist.FormatVersion != ConversionPlaylist.CurrentFormatVersion)
+        {
+            throw new InvalidDataException($"このプレイリストの形式バージョン ({playlist.FormatVersion}) には対応していません。");
+        }
+
+        if (playlist.Items is null || playlist.Items.Count == 0)
+        {
+            throw new InvalidDataException("プレイリストに変換キュー項目がありません。");
+        }
+
+        for (var index = 0; index < playlist.Items.Count; index++)
+        {
+            var item = playlist.Items[index];
+            if (string.IsNullOrWhiteSpace(item.SourceKind)
+                || string.IsNullOrWhiteSpace(item.SourcePathOrUrl))
+            {
+                throw new InvalidDataException($"プレイリストの {index + 1} 件目に必要なソース情報がありません。");
+            }
+        }
+    }
+
+    private void ApplyPlaylist(ConversionPlaylist playlist)
+    {
+        _conversionQueue.Clear();
+        foreach (var playlistItem in playlist.Items)
+        {
+            _conversionQueue.Add(CreateQueueItemFromPlaylist(playlistItem));
+        }
+
+        ApplyPlaylistSettings(playlist);
+        RefreshQueueOrderNumbers();
+        ClearQueueProgress();
+        UpdateQueueUnsupportedStatusesForCurrentMode();
+        UpdateAudioAdjustmentControls();
+        UpdateConvertQueueButtonState();
+        ConversionQueueExpander.IsExpanded = true;
+    }
+
+    private ConversionQueueItem CreateQueueItemFromPlaylist(ConversionPlaylistItem playlistItem)
+    {
+        var sourceKind = playlistItem.SourceKind.Trim();
+        var source = playlistItem.SourcePathOrUrl.Trim();
+        var title = string.IsNullOrWhiteSpace(playlistItem.Title)
+            ? playlistItem.OutputBaseName.Trim()
+            : playlistItem.Title.Trim();
+
+        ConversionQueueItem item;
+        if (string.Equals(sourceKind, "LocalFile", StringComparison.OrdinalIgnoreCase))
+        {
+            var localPath = string.IsNullOrWhiteSpace(playlistItem.LocalFilePath)
+                ? source
+                : playlistItem.LocalFilePath.Trim();
+            item = CreateQueueItem(
+                sourceType: "LocalFile",
+                title: string.IsNullOrWhiteSpace(title) ? Path.GetFileNameWithoutExtension(localPath) : title,
+                sourcePathOrUrl: localPath,
+                status: QueueStatusReady,
+                unsupportedReason: File.Exists(localPath) ? string.Empty : MissingLocalFileReason,
+                isSimpleModeItem: playlistItem.IsSimpleModeItem);
+        }
+        else if (string.Equals(sourceKind, "OnlineVideo", StringComparison.OrdinalIgnoreCase)
+            && Uri.TryCreate(source, UriKind.Absolute, out var uri)
+            && uri.Scheme is "http" or "https")
+        {
+            item = CreateQueueItem(
+                sourceType: "OnlineVideo",
+                title: string.IsNullOrWhiteSpace(title) ? source : title,
+                sourcePathOrUrl: source,
+                status: QueueStatusReady,
+                isSimpleModeItem: playlistItem.IsSimpleModeItem);
+        }
+        else
+        {
+            item = CreateQueueItem(
+                sourceType: "Unsupported",
+                title: string.IsNullOrWhiteSpace(title) ? "対象外の項目" : title,
+                sourcePathOrUrl: source,
+                status: QueueStatusUnsupported,
+                unsupportedReason: string.IsNullOrWhiteSpace(playlistItem.Notes)
+                    ? "プレイリスト内のソース情報が処理対象外です。"
+                    : playlistItem.Notes,
+                isSimpleModeItem: playlistItem.IsSimpleModeItem);
+        }
+
+        item.AudioAdjustmentMode = Enum.IsDefined(playlistItem.AudioAdjustmentMode)
+            ? playlistItem.AudioAdjustmentMode
+            : AudioAdjustmentMode.Off;
+        return item;
+    }
+
+    private void ApplyPlaylistSettings(ConversionPlaylist playlist)
+    {
+        _isApplyingPersistedUiOptions = true;
+        try
+        {
+            SelectComboBoxItemByTag(QueueExecutionModeComboBox, playlist.OperationMode);
+            SelectComboBoxItemByTag(AspectModeComboBox, playlist.AspectMode);
+            KeepOriginalDownloadedFilesCheckBox.IsChecked = playlist.KeepOriginalDownloadedFiles;
+            PeakBoostCheckBox.IsChecked = playlist.PeakBoost;
+            SelectComboBoxItemByContent(
+                TargetPeakComboBox,
+                $"{playlist.TargetPeakDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS",
+                "-1.0 dBFS");
+            NumberPrefixTextBox.Text = playlist.NumberPrefixStart is > 0
+                ? playlist.NumberPrefixStart.Value.ToString(CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            var presetItem = OutputPresetComboBox.Items
+                .OfType<System.Windows.Controls.ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), playlist.OutputPresetId, StringComparison.OrdinalIgnoreCase));
+            if (presetItem is not null)
+            {
+                OutputPresetComboBox.SelectedItem = presetItem;
+                _hasUserChangedOutputPreset = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(playlist.OutputPresetId))
+            {
+                _log.Warn($"プレイリストの出力プリセット '{playlist.OutputPresetId}' は現在表示されていないか利用できないため、現在のプリセットを使用します。");
+            }
+
+            SimpleModeCheckBox.IsChecked = playlist.SimpleModeEnabled;
+        }
+        finally
+        {
+            _isApplyingPersistedUiOptions = false;
+        }
+
+        ApplySimpleModeUiState(restoreNormalLayout: true);
+        UpdateSimpleModeStatus();
+        UpdateAspectModeSelector();
+        SavePersistedUiOptions();
+    }
+
+    private string GetPlaylistFolder()
+    {
+        if (!string.IsNullOrWhiteSpace(_settings.LastPlaylistFolder)
+            && Directory.Exists(_settings.LastPlaylistFolder))
+        {
+            return _settings.LastPlaylistFolder;
+        }
+
+        var videosFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+        return Path.Combine(
+            string.IsNullOrWhiteSpace(videosFolder)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : videosFolder,
+            "NaviMovie-Maker",
+            "playlists");
+    }
+
+    private void RememberPlaylistFolder(string filePath)
+    {
+        var folder = Path.GetDirectoryName(filePath);
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        _settings.LastPlaylistFolder = folder;
+        SavePersistedUiOptions();
     }
 
     private async void SettingsMenuItem_Click(object sender, RoutedEventArgs e)
@@ -4288,6 +4594,11 @@ public partial class MainWindow : Window
             return string.IsNullOrWhiteSpace(item.UnsupportedReason)
                 ? UnsupportedCurrentModeReason
                 : item.UnsupportedReason;
+        }
+
+        if (item.SourceType == "LocalFile" && !File.Exists(item.SourcePathOrUrl))
+        {
+            return MissingLocalFileReason;
         }
 
         return executionMode switch

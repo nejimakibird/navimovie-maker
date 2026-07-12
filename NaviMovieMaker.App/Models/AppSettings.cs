@@ -10,6 +10,8 @@ public sealed class AppSettings
 
     public string LocalVideoFolder { get; set; } = string.Empty;
 
+    public string LastPlaylistFolder { get; set; } = string.Empty;
+
     public bool CreateSubfolderPerOutputPreset { get; set; } = true;
 
     public string DownloadProfile { get; set; } = Services.DownloadProfileCatalog.AutoId;
@@ -67,6 +69,7 @@ public sealed class AppSettings
             TemporaryFolder = TemporaryFolder,
             ConvertedFolder = ConvertedFolder,
             LocalVideoFolder = LocalVideoFolder,
+            LastPlaylistFolder = LastPlaylistFolder,
             CreateSubfolderPerOutputPreset = CreateSubfolderPerOutputPreset,
             DownloadProfile = DownloadProfile,
             RunMode = RunMode,

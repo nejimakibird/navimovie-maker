@@ -73,6 +73,12 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <Menu Margin="0,0,0,14">
+                <MenuItem Header="_プレイリスト">
+                    <MenuItem Header="プレイリストを保存"
+                              Click="SavePlaylistMenuItem_Click" />
+                    <MenuItem Header="プレイリストを開く"
+                              Click="OpenPlaylistMenuItem_Click" />
+                </MenuItem>
                 <MenuItem Header="_ツール">
                     <MenuItem x:Name="CheckExternalToolsMenuItem"
                               Header="外部ツール確認"
