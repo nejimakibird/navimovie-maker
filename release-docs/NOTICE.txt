@@ -4,16 +4,18 @@ NaviMovie-Maker NOTICE
 外部ツールについて
 ------------------
 
-NaviMovie-Maker は、次の外部ツールを利用します。
+NaviMovie-Maker は、次の第三者製外部ツールを利用します。
 
 - FFmpeg
 - ffprobe
 - yt-dlp
+- mpv
 
-FFmpeg / ffprobe / yt-dlp は NaviMovie-Maker とは別の外部プロジェクトです。
-各ツールの著作権、ライセンス、商標、仕様、配布条件は、それぞれのプロジェクトおよび権利者に帰属します。
+これらは NaviMovie-Maker とは別のプロジェクトです。各ツールの著作権、ライセンス、商標、仕様、配布条件は、それぞれのプロジェクトおよび権利者に帰属します。
 
-NaviMovie-Maker には、これらの外部ツールが利用可能か確認する機能と、導入・取得を支援する機能があります。
+NaviMovie-Maker には FFmpeg、ffprobe、yt-dlp の利用可否確認や導入・取得を支援する機能があります。
+
+mpv はプレイリスト再生のために外部プロセスとして起動されます。mpv は NaviMovie-Maker の標準配布パッケージには同梱されません。利用者が別途インストールまたは mpv.exe を選択してください。mpv の利用と再配布には mpv 独自のライセンスおよび配布条件が適用されます。
 
 
 利用上の注意
