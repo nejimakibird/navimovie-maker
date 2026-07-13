@@ -27,6 +27,7 @@ public partial class SettingsWindow : Window
         YtDlpPathTextBox.Text = Settings.YtDlpPath;
         FfmpegPathTextBox.Text = Settings.FfmpegPath;
         FfprobePathTextBox.Text = Settings.FfprobePath;
+        MpvPathTextBox.Text = Settings.MpvPath;
         YtDlpDownloadUrlTextBox.Text = string.IsNullOrWhiteSpace(Settings.YtDlpDownloadUrl)
             ? ExternalToolService.DefaultYtDlpDownloadUrl
             : Settings.YtDlpDownloadUrl;
@@ -78,6 +79,11 @@ public partial class SettingsWindow : Window
         BrowseForExecutable(FfprobePathTextBox, "ffprobe.exe を選択", "ffprobe.exe");
     }
 
+    private void BrowseMpvPathButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseForExecutable(MpvPathTextBox, "mpv.exe を選択", "mpv.exe");
+    }
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         var settings = new AppSettings
@@ -106,6 +112,7 @@ public partial class SettingsWindow : Window
             YtDlpPath = YtDlpPathTextBox.Text.Trim(),
             FfmpegPath = FfmpegPathTextBox.Text.Trim(),
             FfprobePath = FfprobePathTextBox.Text.Trim(),
+            MpvPath = MpvPathTextBox.Text.Trim(),
             YtDlpDownloadUrl = YtDlpDownloadUrlTextBox.Text.Trim(),
             FfmpegDownloadUrl = FfmpegDownloadUrlTextBox.Text.Trim(),
             VisibleOutputPresetIds = _visiblePresets.Select(static preset => preset.Id).ToList(),
@@ -323,6 +330,11 @@ public partial class SettingsWindow : Window
         if (!IsExistingExecutableOrEmpty(settings.FfprobePath, "ffprobe.exe"))
         {
             return "ffprobe.exe のパスが正しくありません。";
+        }
+
+        if (!IsExistingExecutableOrEmpty(settings.MpvPath, "mpv.exe"))
+        {
+            return "mpv.exe のパスが正しくありません。";
         }
 
         return null;

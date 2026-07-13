@@ -52,6 +52,8 @@ public sealed class AppSettings
 
     public string FfprobePath { get; set; } = string.Empty;
 
+    public string MpvPath { get; set; } = string.Empty;
+
     public string YtDlpDownloadUrl { get; set; } = string.Empty;
 
     public string FfmpegDownloadUrl { get; set; } = string.Empty;
@@ -90,6 +92,7 @@ public sealed class AppSettings
             YtDlpPath = YtDlpPath,
             FfmpegPath = FfmpegPath,
             FfprobePath = FfprobePath,
+            MpvPath = MpvPath,
             YtDlpDownloadUrl = YtDlpDownloadUrl,
             FfmpegDownloadUrl = FfmpegDownloadUrl,
             VisibleOutputPresetIds = (VisibleOutputPresetIds ?? []).ToList(),

@@ -45,7 +45,26 @@ public sealed class ConversionPlaylistService
     public ConversionPlaylist Load(string filePath)
     {
         var json = File.ReadAllText(filePath);
-        return JsonSerializer.Deserialize<ConversionPlaylist>(json, SerializerOptions)
+        var playlist = JsonSerializer.Deserialize<ConversionPlaylist>(json, SerializerOptions)
             ?? throw new InvalidDataException("プレイリストの内容を読み取れませんでした。");
+        foreach (var item in playlist.Items ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(item.ItemId))
+            {
+                item.ItemId = Guid.NewGuid().ToString("N");
+            }
+        }
+        if (playlist.FormatVersion == 1)
+        {
+            playlist.FormatVersion = ConversionPlaylist.CurrentFormatVersion;
+        }
+        return playlist;
+    }
+
+    public static string ResolveOutputFolder(ConversionPlaylist playlist, string globalConvertedFolder)
+    {
+        return string.IsNullOrWhiteSpace(playlist.OutputFolder)
+            ? globalConvertedFolder
+            : playlist.OutputFolder;
     }
 }
