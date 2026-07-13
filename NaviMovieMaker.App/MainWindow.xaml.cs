@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 using Microsoft.Win32;
 using NaviMovieMaker.App.Services;
 
@@ -17,6 +18,10 @@ namespace NaviMovieMaker.App;
 
 public partial class MainWindow : Window
 {
+    public static readonly RoutedUICommand NewPlaylistCommand = new("新規プレイリスト", nameof(NewPlaylistCommand), typeof(MainWindow));
+    public static readonly RoutedUICommand OpenPlaylistCommand = new("プレイリストを開く", nameof(OpenPlaylistCommand), typeof(MainWindow));
+    public static readonly RoutedUICommand SavePlaylistCommand = new("プレイリストを保存", nameof(SavePlaylistCommand), typeof(MainWindow));
+    public static readonly RoutedUICommand SavePlaylistAsCommand = new("名前を付けて保存", nameof(SavePlaylistAsCommand), typeof(MainWindow));
     private const int MaxLogEntryCount = 3000;
     private const int MaxDownloadAttempts = 3;
     private const string YtDlpInstallCommand = "winget install yt-dlp.yt-dlp";
@@ -80,6 +85,9 @@ public partial class MainWindow : Window
     private bool _hasUserChangedOutputPreset;
     private bool? _preSimpleCandidatesExpanded;
     private bool? _preSimpleLogExpanded;
+    private string? _currentPlaylistFilePath;
+    private bool _isPlaylistDirty;
+    private bool _isUpdatingPlaylist;
 
     public MainWindow()
     {
@@ -117,6 +125,7 @@ public partial class MainWindow : Window
         ApplySimpleModeUiState(restoreNormalLayout: false);
         UpdateSimpleModeStatus();
         _isInitializingUi = false;
+        SetPlaylistClean(null);
         _log.Info("Application started.");
         _log.Info("SD card copying and playback order sorting are handled outside NaviMovie-Maker, for example with Explorer and UMSSort.");
     }
@@ -161,17 +170,22 @@ public partial class MainWindow : Window
         OpenConfiguredFolder(_externalToolService.ToolsFolder, "tools フォルダ");
     }
 
-    private void SavePlaylistMenuItem_Click(object sender, RoutedEventArgs e)
+    private void SavePlaylistCommand_Executed(object sender, ExecutedRoutedEventArgs e)
     {
-        if (_conversionQueue.Count == 0)
-        {
-            MessageBox.Show(this, "保存する変換キューがありません。", "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+        SavePlaylist(saveAs: false);
+    }
 
+    private void SavePlaylistAsCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+    {
+        SavePlaylist(saveAs: true);
+    }
+
+    private bool SavePlaylist(bool saveAs)
+    {
         ConversionQueueDataGrid.CommitEdit();
         ConversionQueueDataGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
 
+        var filePath = saveAs ? null : _currentPlaylistFilePath;
         var defaultFolder = GetPlaylistFolder();
         try
         {
@@ -181,42 +195,55 @@ public partial class MainWindow : Window
         {
             _log.Error($"プレイリスト保存先を作成できませんでした。{ex.Message}");
             MessageBox.Show(this, ex.Message, "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            return false;
         }
 
-        var dialog = new SaveFileDialog
+        if (filePath is null)
         {
-            Title = "プレイリストを保存",
-            InitialDirectory = defaultFolder,
-            FileName = $"playlist-{DateTime.Now:yyyyMMdd-HHmmss}.nmm-playlist.json",
-            DefaultExt = ".nmm-playlist.json",
-            AddExtension = true,
-            Filter = "NaviMovie-Maker プレイリスト|*.nmm-playlist.json|JSON ファイル|*.json",
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
+            var dialog = new SaveFileDialog
+            {
+                Title = saveAs ? "名前を付けて保存" : "プレイリストを保存",
+                InitialDirectory = defaultFolder,
+                FileName = _currentPlaylistFilePath is null
+                    ? $"playlist-{DateTime.Now:yyyyMMdd-HHmmss}.nmm-playlist.json"
+                    : Path.GetFileName(_currentPlaylistFilePath),
+                DefaultExt = ".nmm-playlist.json",
+                AddExtension = true,
+                Filter = "NaviMovie-Maker プレイリスト|*.nmm-playlist.json|JSON ファイル|*.json",
+            };
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+            filePath = dialog.FileName;
         }
 
         try
         {
-            _playlistService.Save(dialog.FileName, CreatePlaylist(dialog.FileName));
-            RememberPlaylistFolder(dialog.FileName);
-            _log.Success($"プレイリストを保存しました: {dialog.FileName}");
+            _playlistService.Save(filePath, CreatePlaylist(filePath));
+            RememberPlaylistFolder(filePath);
+            SetPlaylistClean(filePath);
+            _log.Success($"プレイリストを保存しました: {filePath}");
+            return true;
         }
         catch (Exception ex)
         {
             _log.Error($"プレイリストを保存できませんでした。{ex.Message}");
-            MessageBox.Show(this, ex.Message, "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"プレイリストを保存できませんでした。\n{ex.Message}", "プレイリストを保存", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
     }
 
-    private void OpenPlaylistMenuItem_Click(object sender, RoutedEventArgs e)
+    private void OpenPlaylistCommand_Executed(object sender, ExecutedRoutedEventArgs e)
     {
         if (IsQueueProcessingActive())
         {
             MessageBox.Show(this, "キュー処理中はプレイリストを開けません。先にキャンセルするか、処理が完了してから開いてください。", "プレイリストを開く", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!ConfirmDiscardOrSaveChanges())
+        {
             return;
         }
 
@@ -246,23 +273,68 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_conversionQueue.Count > 0)
-        {
-            var result = MessageBox.Show(
-                this,
-                "現在の変換キューを置き換えてプレイリストを開きますか？",
-                "プレイリストを開く",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes)
-            {
-                return;
-            }
-        }
-
-        ApplyPlaylist(playlist);
+        _isUpdatingPlaylist = true;
+        try { ApplyPlaylist(playlist); }
+        finally { _isUpdatingPlaylist = false; }
         RememberPlaylistFolder(dialog.FileName);
+        SetPlaylistClean(dialog.FileName);
         _log.Success($"プレイリストを開きました: {dialog.FileName} ({_conversionQueue.Count} 件)");
+    }
+
+    private void NewPlaylistCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (!ConfirmDiscardOrSaveChanges()) return;
+        _isUpdatingPlaylist = true;
+        try
+        {
+            _conversionQueue.Clear();
+            ClearQueueProgress();
+            RefreshQueueOrderNumbers();
+            UpdateConvertQueueButtonState();
+        }
+        finally { _isUpdatingPlaylist = false; }
+        SetPlaylistClean(null);
+        _log.Info("新規プレイリストを作成しました。");
+    }
+
+    private void PlaylistCommand_CanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        e.CanExecute = !IsQueueProcessingActive();
+    }
+
+    private bool ConfirmDiscardOrSaveChanges()
+    {
+        if (!_isPlaylistDirty) return true;
+        var dialog = new UnsavedPlaylistChangesDialog { Owner = this };
+        dialog.ShowDialog();
+        return dialog.Choice switch
+        {
+            UnsavedPlaylistChoice.Save => SavePlaylist(saveAs: false),
+            UnsavedPlaylistChoice.DontSave => true,
+            _ => false,
+        };
+    }
+
+    private void MarkPlaylistDirty()
+    {
+        if (_isInitializingUi || _isUpdatingPlaylist || _isApplyingPersistedUiOptions) return;
+        _isPlaylistDirty = true;
+        UpdateWindowTitle();
+    }
+
+    private void SetPlaylistClean(string? filePath)
+    {
+        _currentPlaylistFilePath = filePath;
+        _isPlaylistDirty = false;
+        UpdateWindowTitle();
+    }
+
+    private void UpdateWindowTitle()
+    {
+        var name = _currentPlaylistFilePath is null
+            ? null
+            : Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(_currentPlaylistFilePath));
+        Title = "NaviMovie-Maker" + (name is null ? string.Empty : $" - {name}") + (_isPlaylistDirty ? " *" : string.Empty);
     }
 
     private ConversionPlaylist CreatePlaylist(string filePath)
@@ -307,9 +379,9 @@ public partial class MainWindow : Window
             throw new InvalidDataException($"このプレイリストの形式バージョン ({playlist.FormatVersion}) には対応していません。");
         }
 
-        if (playlist.Items is null || playlist.Items.Count == 0)
+        if (playlist.Items is null)
         {
-            throw new InvalidDataException("プレイリストに変換キュー項目がありません。");
+            throw new InvalidDataException("プレイリストの変換キュー情報を読み取れませんでした。");
         }
 
         for (var index = 0; index < playlist.Items.Count; index++)
@@ -517,6 +589,11 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (!ConfirmDiscardOrSaveChanges())
+        {
+            e.Cancel = true;
+            return;
+        }
         SaveLastUsedLayoutState();
         SavePersistedUiOptions();
     }
@@ -670,6 +747,7 @@ public partial class MainWindow : Window
         SavePersistedUiOptions();
         ApplySimpleModeUiState(restoreNormalLayout: true);
         UpdateSimpleModeStatus();
+        MarkPlaylistDirty();
     }
 
     private void ApplySimpleModeUiState(bool restoreNormalLayout)
@@ -1164,6 +1242,7 @@ public partial class MainWindow : Window
         SyncPresetSelection(OutputPresetComboBox, SimpleOutputPresetComboBox);
         UpdateAspectModeSelector();
         SavePersistedUiOptions();
+        MarkPlaylistDirty();
     }
 
     private void SimpleOutputPresetComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -1175,6 +1254,7 @@ public partial class MainWindow : Window
 
         SyncPresetSelection(SimpleOutputPresetComboBox, OutputPresetComboBox);
         SavePersistedUiOptions();
+        MarkPlaylistDirty();
     }
 
     private static void SyncPresetSelection(
@@ -1200,12 +1280,19 @@ public partial class MainWindow : Window
     {
         UpdateAudioAdjustmentControls();
         SavePersistedUiOptions();
+        MarkPlaylistDirty();
     }
 
     private void PersistedUiOption_Changed(object sender, RoutedEventArgs e)
     {
         SavePersistedUiOptions();
         UpdateQueueUnsupportedStatusesForCurrentMode();
+        MarkPlaylistDirty();
+    }
+
+    private void PlaylistSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        MarkPlaylistDirty();
     }
 
     private void NumberPrefixTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
@@ -4758,6 +4845,7 @@ public partial class MainWindow : Window
         }
 
         UpdateConvertQueueButtonState();
+        MarkPlaylistDirty();
         if (!_isQueueConverting)
         {
             ClearQueueProgress();
@@ -4783,6 +4871,12 @@ public partial class MainWindow : Window
 
     private void ConversionQueueItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(ConversionQueueItem.Title)
+            or nameof(ConversionQueueItem.Order)
+            or nameof(ConversionQueueItem.AudioAdjustmentMode))
+        {
+            MarkPlaylistDirty();
+        }
         if (e.PropertyName is nameof(ConversionQueueItem.IsSelected)
             or nameof(ConversionQueueItem.Status)
             or nameof(ConversionQueueItem.SourcePathOrUrl))

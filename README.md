@@ -11,3 +11,5 @@ NaviMovie-Maker is available from official distribution sources such as GitHub R
 NaviMovie-Maker is currently unsigned. Windows SmartScreen or Smart App Control may show a warning even when downloaded from official distribution sources such as GitHub Releases or Vector.
 
 The Playlist menu saves the current conversion queue and relevant conversion settings as a `.nmm-playlist.json` file. In NaviMovie-Maker, a playlist is a reusable conversion job list, not a media playback playlist. Loading one restores items for editing and conversion; completed or in-progress runtime states are reset.
+
+Playlist shortcuts follow standard document editing: `Ctrl+N` creates a new playlist, `Ctrl+O` opens one, `Ctrl+S` saves (overwriting the current file after the first save), and `Ctrl+Shift+S` opens Save As. Unsaved changes are marked with `*` in the window title and confirmed before replacing the playlist or exiting.
