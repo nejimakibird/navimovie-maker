@@ -200,6 +200,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
@@ -267,23 +268,29 @@
 
                     <TextBlock Grid.Row="3"
                                Grid.Column="0"
+                               Text="mpv.exe"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="MpvPathTextBox"
+                             Grid.Row="3"
+                             Grid.Column="1"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,12,10" />
+                    <Button Grid.Row="3"
+                            Grid.Column="2"
+                            Content="参照..."
+                            MinWidth="90"
+                            MinHeight="32"
+                            Margin="0,0,0,10"
+                            Click="BrowseMpvPathButton_Click" />
+
+                    <TextBlock Grid.Row="4"
+                               Grid.Column="0"
                                Text="yt-dlp取得URL"
                                VerticalAlignment="Center"
                                Margin="0,0,12,10" />
                     <TextBox x:Name="YtDlpDownloadUrlTextBox"
-                             Grid.Row="3"
-                             Grid.Column="1"
-                             Grid.ColumnSpan="2"
-                             MinHeight="32"
-                             VerticalContentAlignment="Center"
-                             Margin="0,0,0,10" />
-
-                    <TextBlock Grid.Row="4"
-                               Grid.Column="0"
-                               Text="FFmpeg取得URL"
-                               VerticalAlignment="Center"
-                               Margin="0,0,12,10" />
-                    <TextBox x:Name="FfmpegDownloadUrlTextBox"
                              Grid.Row="4"
                              Grid.Column="1"
                              Grid.ColumnSpan="2"
@@ -292,8 +299,21 @@
                              Margin="0,0,0,10" />
 
                     <TextBlock Grid.Row="5"
+                               Grid.Column="0"
+                               Text="FFmpeg取得URL"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,10" />
+                    <TextBox x:Name="FfmpegDownloadUrlTextBox"
+                             Grid.Row="5"
+                             Grid.Column="1"
+                             Grid.ColumnSpan="2"
+                             MinHeight="32"
+                             VerticalContentAlignment="Center"
+                             Margin="0,0,0,10" />
+
+                    <TextBlock Grid.Row="6"
                                Grid.ColumnSpan="3"
-                               Text="空欄の場合は tools フォルダ、次に PATH から検出します。取得URLは通常変更不要です。"
+                               Text="実行ファイル欄が空の場合は tools フォルダ、次に PATH から検出します。mpv は自動取得されません。取得URLは通常変更不要です。"
                                Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Top" />

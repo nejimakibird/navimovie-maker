@@ -2,7 +2,7 @@ namespace NaviMovieMaker.App;
 
 public sealed class ConversionPlaylist
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
 
@@ -13,6 +13,8 @@ public sealed class ConversionPlaylist
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    public string OutputFolder { get; set; } = string.Empty;
 
     public string OutputPresetId { get; set; } = string.Empty;
 
@@ -35,6 +37,8 @@ public sealed class ConversionPlaylist
 
 public sealed class ConversionPlaylistItem
 {
+    public string ItemId { get; set; } = string.Empty;
+
     public string SourceKind { get; set; } = string.Empty;
 
     public string SourcePathOrUrl { get; set; } = string.Empty;
@@ -54,4 +58,38 @@ public sealed class ConversionPlaylistItem
     public bool IsSimpleModeItem { get; set; }
 
     public AudioAdjustmentMode AudioAdjustmentMode { get; set; }
+
+    public PlaylistResultRecord? Result { get; set; }
+}
+
+public sealed class PlaylistResultRecord
+{
+    public PlaylistSourceIdentity SourceIdentity { get; set; } = new();
+    public string OperationMode { get; set; } = string.Empty;
+    public string ProfileId { get; set; } = string.Empty;
+    public string ResultFilePath { get; set; } = string.Empty;
+    public string ResultFileName { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public DateTime LastWriteTimeUtc { get; set; }
+    public DateTime GeneratedAtUtc { get; set; }
+    public int? SequenceNumber { get; set; }
+}
+
+public sealed class PlaylistSourceIdentity
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public long? FileSize { get; set; }
+    public DateTime? LastWriteTimeUtc { get; set; }
+}
+
+public enum PlaylistResultState
+{
+    Unprocessed,
+    Available,
+    SequenceOutOfSync,
+    Missing,
+    Modified,
+    NeedsReprocess,
+    NameConflict,
 }

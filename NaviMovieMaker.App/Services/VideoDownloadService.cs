@@ -17,6 +17,7 @@ public sealed class VideoDownloadService
         Action<string> log,
         DownloadProfileOption downloadProfile,
         bool addNumberPrefix = true,
+        string? deterministicCollisionSuffix = null,
         Action<DownloadProgressInfo>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -30,7 +31,11 @@ public sealed class VideoDownloadService
         var desiredStem = addNumberPrefix
             ? $"{downloadOrder:000}_{safeTitle}"
             : safeTitle;
-        var outputStem = GetUniqueOutputStem(workingFolder, desiredStem);
+        var outputStem = GetUniqueOutputStem(workingFolder, desiredStem, deterministicCollisionSuffix);
+        if (outputStem is null)
+        {
+            return new VideoDownloadResult(false, false, null, string.Empty, "出力ファイル名が既存の所有者不明ファイルと競合しています。", null);
+        }
         var outputTemplate = Path.Combine(workingFolder, $"{outputStem}.%(ext)s");
 
         using var process = new Process
@@ -213,17 +218,26 @@ public sealed class VideoDownloadService
         return video.Url;
     }
 
-    private static string GetUniqueOutputStem(string folder, string desiredStem)
+    private static string? GetUniqueOutputStem(string folder, string desiredStem, string? deterministicCollisionSuffix)
     {
-        var candidate = desiredStem;
-        var suffix = 2;
-        while (Directory.EnumerateFiles(folder, $"{candidate}.*").Any())
+        if (!Directory.EnumerateFiles(folder, $"{desiredStem}.*").Any())
         {
-            candidate = $"{desiredStem}_{suffix}";
-            suffix++;
+            return desiredStem;
         }
 
-        return candidate;
+        if (string.IsNullOrWhiteSpace(deterministicCollisionSuffix))
+        {
+            var suffix = 2;
+            var candidate = $"{desiredStem}_{suffix}";
+            while (Directory.EnumerateFiles(folder, $"{candidate}.*").Any())
+            {
+                candidate = $"{desiredStem}_{++suffix}";
+            }
+            return candidate;
+        }
+
+        var distinctStem = $"{desiredStem}__{deterministicCollisionSuffix}";
+        return Directory.EnumerateFiles(folder, $"{distinctStem}.*").Any() ? null : distinctStem;
     }
 
     private static string? FindDownloadedFilePath(string standardOutput, string workingFolder, string expectedStem)

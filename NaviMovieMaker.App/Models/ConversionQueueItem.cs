@@ -19,8 +19,13 @@ public sealed class ConversionQueueItem : INotifyPropertyChanged
     private string _etaText = string.Empty;
     private bool _isIndeterminate;
     private AudioAdjustmentMode _audioAdjustmentMode = AudioAdjustmentMode.Off;
+    private PlaylistResultRecord? _result;
+    private PlaylistResultState _resultState;
+    private string _resultStateReason = string.Empty;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string ItemId { get; init; } = Guid.NewGuid().ToString("N");
 
     public bool IsSelected
     {
@@ -57,6 +62,41 @@ public sealed class ConversionQueueItem : INotifyPropertyChanged
         get => _convertedFilePath;
         set => SetField(ref _convertedFilePath, value);
     }
+
+    public PlaylistResultRecord? Result
+    {
+        get => _result;
+        set => SetField(ref _result, value);
+    }
+
+    public PlaylistResultState ResultState
+    {
+        get => _resultState;
+        set
+        {
+            if (SetField(ref _resultState, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResultStateDisplay)));
+            }
+        }
+    }
+
+    public string ResultStateReason
+    {
+        get => _resultStateReason;
+        set => SetField(ref _resultStateReason, value);
+    }
+
+    public string ResultStateDisplay => ResultState switch
+    {
+        PlaylistResultState.Available => "出力済み",
+        PlaylistResultState.SequenceOutOfSync => "連番未同期",
+        PlaylistResultState.Missing => "出力なし",
+        PlaylistResultState.Modified => "出力変更あり",
+        PlaylistResultState.NeedsReprocess => "要再処理",
+        PlaylistResultState.NameConflict => "名前衝突",
+        _ => "未処理",
+    };
 
     public string Status
     {
