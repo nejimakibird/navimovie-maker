@@ -10,6 +10,8 @@ public sealed class AppSettings
 
     public string LocalVideoFolder { get; set; } = string.Empty;
 
+    public string LastPlaylistFolder { get; set; } = string.Empty;
+
     public bool CreateSubfolderPerOutputPreset { get; set; } = true;
 
     public string DownloadProfile { get; set; } = Services.DownloadProfileCatalog.AutoId;
@@ -50,6 +52,8 @@ public sealed class AppSettings
 
     public string FfprobePath { get; set; } = string.Empty;
 
+    public string MpvPath { get; set; } = string.Empty;
+
     public string YtDlpDownloadUrl { get; set; } = string.Empty;
 
     public string FfmpegDownloadUrl { get; set; } = string.Empty;
@@ -67,6 +71,7 @@ public sealed class AppSettings
             TemporaryFolder = TemporaryFolder,
             ConvertedFolder = ConvertedFolder,
             LocalVideoFolder = LocalVideoFolder,
+            LastPlaylistFolder = LastPlaylistFolder,
             CreateSubfolderPerOutputPreset = CreateSubfolderPerOutputPreset,
             DownloadProfile = DownloadProfile,
             RunMode = RunMode,
@@ -87,6 +92,7 @@ public sealed class AppSettings
             YtDlpPath = YtDlpPath,
             FfmpegPath = FfmpegPath,
             FfprobePath = FfprobePath,
+            MpvPath = MpvPath,
             YtDlpDownloadUrl = YtDlpDownloadUrl,
             FfmpegDownloadUrl = FfmpegDownloadUrl,
             VisibleOutputPresetIds = (VisibleOutputPresetIds ?? []).ToList(),

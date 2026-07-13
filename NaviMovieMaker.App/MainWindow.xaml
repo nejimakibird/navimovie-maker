@@ -4,12 +4,31 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:services="clr-namespace:NaviMovieMaker.App.Services"
+        xmlns:local="clr-namespace:NaviMovieMaker.App"
         mc:Ignorable="d"
         Title="NaviMovie-Maker" Height="860" Width="1280" MinHeight="760" MinWidth="1080"
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         Icon="pack://application:,,,/Assets/app.ico">
+    <Window.CommandBindings>
+        <CommandBinding Command="{x:Static local:MainWindow.NewPlaylistCommand}" Executed="NewPlaylistCommand_Executed" CanExecute="PlaylistCommand_CanExecute" />
+        <CommandBinding Command="{x:Static local:MainWindow.OpenPlaylistCommand}" Executed="OpenPlaylistCommand_Executed" CanExecute="PlaylistCommand_CanExecute" />
+        <CommandBinding Command="{x:Static local:MainWindow.SavePlaylistCommand}" Executed="SavePlaylistCommand_Executed" />
+        <CommandBinding Command="{x:Static local:MainWindow.SavePlaylistAsCommand}" Executed="SavePlaylistAsCommand_Executed" />
+        <CommandBinding Command="{x:Static local:MainWindow.PlaySourcePlaylistCommand}" Executed="PlaySourcePlaylistCommand_Executed" CanExecute="PlaybackCommand_CanExecute" />
+        <CommandBinding Command="{x:Static local:MainWindow.PlayConvertedPlaylistCommand}" Executed="PlayConvertedPlaylistCommand_Executed" CanExecute="PlaybackCommand_CanExecute" />
+        <CommandBinding Command="{x:Static local:MainWindow.PlayPlaylistCommand}" Executed="PlayPlaylistCommand_Executed" CanExecute="PlaybackCommand_CanExecute" />
+        <CommandBinding Command="{x:Static local:MainWindow.RefreshOutputStateCommand}" Executed="RefreshOutputStateCommand_Executed" />
+        <CommandBinding Command="{x:Static local:MainWindow.SynchronizeOutputSequenceCommand}" Executed="SynchronizeOutputSequenceCommand_Executed" />
+    </Window.CommandBindings>
+    <Window.InputBindings>
+        <KeyBinding Command="{x:Static local:MainWindow.NewPlaylistCommand}" Key="N" Modifiers="Control" />
+        <KeyBinding Command="{x:Static local:MainWindow.OpenPlaylistCommand}" Key="O" Modifiers="Control" />
+        <KeyBinding Command="{x:Static local:MainWindow.SavePlaylistCommand}" Key="S" Modifiers="Control" />
+        <KeyBinding Command="{x:Static local:MainWindow.SavePlaylistAsCommand}" Key="S" Modifiers="Control+Shift" />
+        <KeyBinding Command="{x:Static local:MainWindow.PlayPlaylistCommand}" Key="P" Modifiers="Control" />
+    </Window.InputBindings>
     <Window.Resources>
         <Style x:Key="LogMarkerStyle" TargetType="TextBlock">
             <Setter Property="Text" Value="●" />
@@ -73,6 +92,21 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <Menu Margin="0,0,0,14">
+                <MenuItem Header="_プレイリスト">
+                    <MenuItem Header="新規プレイリスト" Command="{x:Static local:MainWindow.NewPlaylistCommand}" InputGestureText="Ctrl+N" />
+                    <MenuItem Header="プレイリストを開く" Command="{x:Static local:MainWindow.OpenPlaylistCommand}" InputGestureText="Ctrl+O" />
+                    <Separator />
+                    <MenuItem Header="プレイリストを保存"
+                              Command="{x:Static local:MainWindow.SavePlaylistCommand}" InputGestureText="Ctrl+S" />
+                    <MenuItem Header="名前を付けて保存"
+                              Command="{x:Static local:MainWindow.SavePlaylistAsCommand}" InputGestureText="Ctrl+Shift+S" />
+                    <Separator />
+                    <MenuItem Header="プレイリストを再生"
+                              Command="{x:Static local:MainWindow.PlayPlaylistCommand}" InputGestureText="Ctrl+P" />
+                    <Separator />
+                    <MenuItem Header="出力状態を更新" Command="{x:Static local:MainWindow.RefreshOutputStateCommand}" />
+                    <MenuItem Header="出力ファイルの連番を同期" Command="{x:Static local:MainWindow.SynchronizeOutputSequenceCommand}" />
+                </MenuItem>
                 <MenuItem Header="_ツール">
                     <MenuItem x:Name="CheckExternalToolsMenuItem"
                               Header="外部ツール確認"
@@ -504,7 +538,8 @@
                                  MinHeight="30"
                                  VerticalContentAlignment="Center"
                                  Margin="0,0,0,8"
-                                 PreviewTextInput="NumberPrefixTextBox_PreviewTextInput" />
+                                 PreviewTextInput="NumberPrefixTextBox_PreviewTextInput"
+                                 TextChanged="PlaylistSetting_Changed" />
                     </WrapPanel>
 
                     <WrapPanel x:Name="NormalAudioOptionsPanel"
@@ -650,6 +685,13 @@
                                                     Binding="{Binding AudioAdjustmentDisplay}"
                                                     IsReadOnly="True"
                                                     Width="100" />
+                                <DataGridTemplateColumn Header="結果" Width="105" IsReadOnly="True">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ResultStateDisplay}" ToolTip="{Binding ResultStateReason}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTemplateColumn Header="状態"
                                                         IsReadOnly="True"
                                                         Width="460"

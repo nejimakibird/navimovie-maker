@@ -24,6 +24,11 @@ public sealed class ExternalToolService
         return Path.Combine(ToolsFolder, executableName);
     }
 
+    public string? ResolveYtDlpExecutablePath(string? configuredPath)
+    {
+        return ResolveExecutablePath("yt-dlp.exe", configuredPath);
+    }
+
     public Task<ExternalToolResult> CheckYtDlpAsync(
         AppSettings settings,
         CancellationToken cancellationToken = default)
