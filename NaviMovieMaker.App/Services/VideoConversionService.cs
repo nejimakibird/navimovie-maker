@@ -513,6 +513,95 @@ public sealed class VideoConversionService
         }
     }
 
+    public async Task<ReplayGainAnalysisResult> AnalyzeReplayGainAsync(
+        string inputFilePath,
+        Action<string> log,
+        CancellationToken cancellationToken = default)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = FfmpegPath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            },
+            EnableRaisingEvents = true,
+        };
+
+        process.StartInfo.ArgumentList.Add("-hide_banner");
+        process.StartInfo.ArgumentList.Add("-nostats");
+        process.StartInfo.ArgumentList.Add("-i");
+        process.StartInfo.ArgumentList.Add(inputFilePath);
+        process.StartInfo.ArgumentList.Add("-map");
+        process.StartInfo.ArgumentList.Add("0:a:0");
+        process.StartInfo.ArgumentList.Add("-af");
+        process.StartInfo.ArgumentList.Add("replaygain");
+        process.StartInfo.ArgumentList.Add("-f");
+        process.StartInfo.ArgumentList.Add("null");
+        process.StartInfo.ArgumentList.Add("NUL");
+
+        var standardOutput = new StringBuilder();
+        var standardError = new StringBuilder();
+
+        try
+        {
+            process.Start();
+            log($"ffmpeg ReplayGain analysis input: {inputFilePath}");
+
+            await using var registration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            });
+
+            var outputTask = ReadStreamAsync(process.StandardOutput, standardOutput, log, cancellationToken);
+            var errorTask = ReadStreamAsync(process.StandardError, standardError, log, cancellationToken);
+
+            await process.WaitForExitAsync(cancellationToken);
+            await Task.WhenAll(outputTask, errorTask);
+
+            var analysis = ReplayGainParser.Parse(standardError.ToString());
+            return new ReplayGainAnalysisResult(
+                process.ExitCode == 0 && analysis is not null,
+                analysis,
+                standardOutput.ToString(),
+                standardError.ToString(),
+                process.ExitCode,
+                false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ReplayGainAnalysisResult(
+                false,
+                null,
+                standardOutput.ToString(),
+                "ReplayGain analysis was canceled.",
+                null,
+                true);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            return new ReplayGainAnalysisResult(
+                false,
+                null,
+                standardOutput.ToString(),
+                $"ffmpeg was not found in PATH. Install it or configure the path later. {ex.Message}",
+                null,
+                false);
+        }
+    }
+
     private static void AddProgressArguments(IList<string> arguments)
     {
         arguments.Add("-progress");
@@ -754,3 +843,11 @@ public sealed record AudioPeakAnalysisResult(
     string StandardOutput,
     string StandardError,
     int? ExitCode);
+
+public sealed record ReplayGainAnalysisResult(
+    bool IsSuccess,
+    ReplayGainAnalysis? Analysis,
+    string StandardOutput,
+    string StandardError,
+    int? ExitCode,
+    bool WasCanceled);

@@ -100,14 +100,18 @@ public sealed class PlaylistResultService
     public string ResolveCollisionSafePath(ConversionQueueItem item, string folder, string desiredStem, string extension)
     {
         var desiredPath = Path.Combine(folder, desiredStem + extension);
-        if (!File.Exists(desiredPath)) return desiredPath;
+        if (!File.Exists(desiredPath) || CanReuseRecordedResultPath(item, desiredPath)) return desiredPath;
 
         var suffix = GetIdentitySuffix(CreateSourceIdentity(item));
-        var distinctPath = Path.Combine(folder, $"{desiredStem}__{suffix}{extension}");
-        if (!File.Exists(distinctPath)) return distinctPath;
+        var distinctStem = $"{desiredStem}_{suffix}";
+        var distinctPath = Path.Combine(folder, distinctStem + extension);
+        if (!File.Exists(distinctPath) || CanReuseRecordedResultPath(item, distinctPath)) return distinctPath;
 
-        SetState(item, PlaylistResultState.NameConflict, $"出力先が別のファイルに使用されています: {distinctPath}");
-        throw new IOException($"出力先に所有者不明のファイルがあります: {distinctPath}");
+        for (var index = 2; ; index++)
+        {
+            var nextPath = Path.Combine(folder, $"{distinctStem}_{index}{extension}");
+            if (!File.Exists(nextPath) || CanReuseRecordedResultPath(item, nextPath)) return nextPath;
+        }
     }
 
     public string GetStableCollisionSuffix(ConversionQueueItem item)
@@ -212,6 +216,25 @@ public sealed class PlaylistResultService
         && string.Equals(left.Location, right.Location, StringComparison.OrdinalIgnoreCase)
         && left.FileSize == right.FileSize
         && left.LastWriteTimeUtc == right.LastWriteTimeUtc;
+
+    public bool CanReuseRecordedResultPath(ConversionQueueItem item, string candidatePath)
+    {
+        var result = item.Result;
+        if (result is null
+            || !string.Equals(
+                Path.GetFullPath(result.ResultFilePath),
+                Path.GetFullPath(candidatePath),
+                StringComparison.OrdinalIgnoreCase)
+            || !IdentityEquals(result.SourceIdentity, CreateSourceIdentity(item)))
+        {
+            return false;
+        }
+
+        var file = new FileInfo(candidatePath);
+        return file.Exists
+            && file.Length == result.FileSize
+            && file.LastWriteTimeUtc == result.LastWriteTimeUtc;
+    }
 
     private static bool HasSequencePrefix(string fileName, int expected) =>
         SequencePrefixPattern.Match(fileName) is { Success: true } match

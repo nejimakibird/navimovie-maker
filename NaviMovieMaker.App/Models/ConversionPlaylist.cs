@@ -28,7 +28,17 @@ public sealed class ConversionPlaylist
 
     public bool PeakBoost { get; set; }
 
+    public AudioNormalizationMode AudioNormalizationMode { get; set; } = AudioNormalizationMode.Peak;
+
     public double TargetPeakDb { get; set; } = -1.0;
+
+    public double TargetReplayGainVolumeDb { get; set; } = 89.0;
+
+    public double PeakLimitDb { get; set; } = -1.0;
+
+    public double NormalizationToleranceDb { get; set; } = 0.5;
+
+    public double MaximumNormalizationGainDb { get; set; } = 20.0;
 
     public int? NumberPrefixStart { get; set; }
 

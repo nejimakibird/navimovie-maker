@@ -66,6 +66,7 @@ public partial class MainWindow : Window
     private readonly MpvPlaybackService _mpvPlaybackService = new();
     private readonly MpvExecutableResolver _mpvExecutableResolver;
     private readonly PlaylistResultService _playlistResultService = new();
+    private readonly ReplayGainNormalizationService _replayGainNormalizationService = new();
     private readonly AppLog _log = new();
     private readonly ObservableCollection<LogEntry> _logEntries = new();
     private readonly ObservableCollection<VideoListItem> _videos = new();
@@ -588,6 +589,7 @@ public partial class MainWindow : Window
     private ConversionPlaylist CreatePlaylist(string filePath)
     {
         var now = DateTimeOffset.Now;
+        var replayGainOptions = GetReplayGainNormalizationOptions();
         return new ConversionPlaylist
         {
             AppVersion = GetType().Assembly.GetName().Version?.ToString() ?? string.Empty,
@@ -601,7 +603,12 @@ public partial class MainWindow : Window
             AspectMode = GetSelectedAspectMode(),
             KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true,
             PeakBoost = PeakBoostCheckBox.IsChecked == true,
+            AudioNormalizationMode = GetSelectedAudioNormalizationMode(),
             TargetPeakDb = GetSelectedTargetPeakDb(),
+            TargetReplayGainVolumeDb = replayGainOptions.TargetReplayGainVolumeDb,
+            PeakLimitDb = replayGainOptions.PeakLimitDb,
+            NormalizationToleranceDb = replayGainOptions.ToleranceDb,
+            MaximumNormalizationGainDb = replayGainOptions.MaximumGainDb,
             NumberPrefixStart = GetNumberPrefixStartNumber(),
             Items = _conversionQueue
                 .OrderBy(static item => item.Order)
@@ -737,10 +744,16 @@ public partial class MainWindow : Window
             SelectComboBoxItemByTag(AspectModeComboBox, playlist.AspectMode);
             KeepOriginalDownloadedFilesCheckBox.IsChecked = playlist.KeepOriginalDownloadedFiles;
             PeakBoostCheckBox.IsChecked = playlist.PeakBoost;
+            SelectComboBoxItemByTag(NormalizationModeComboBox, playlist.AudioNormalizationMode.ToString());
             SelectComboBoxItemByContent(
                 TargetPeakComboBox,
                 $"{playlist.TargetPeakDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS",
                 "-1.0 dBFS");
+            ApplyReplayGainNormalizationOptionsToControls(new ReplayGainNormalizationOptions(
+                playlist.TargetReplayGainVolumeDb,
+                playlist.PeakLimitDb,
+                playlist.NormalizationToleranceDb,
+                playlist.MaximumNormalizationGainDb).Normalize());
             NumberPrefixTextBox.Text = playlist.NumberPrefixStart is > 0
                 ? playlist.NumberPrefixStart.Value.ToString(CultureInfo.InvariantCulture)
                 : string.Empty;
@@ -1554,6 +1567,61 @@ public partial class MainWindow : Window
         MarkPlaylistDirty();
     }
 
+    private void NormalizationModeComboBox_SelectionChanged(
+        object sender,
+        System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        UpdateAudioAdjustmentControls();
+        SavePersistedUiOptions();
+        MarkPlaylistDirty();
+    }
+
+    private void NormalizationValueTextBox_TextChanged(
+        object sender,
+        System.Windows.Controls.TextChangedEventArgs e)
+    {
+        SavePersistedUiOptions();
+        MarkPlaylistDirty();
+    }
+
+    private void NormalizationValueTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        _isApplyingPersistedUiOptions = true;
+        try
+        {
+            ApplyReplayGainNormalizationOptionsToControls(GetReplayGainNormalizationOptions());
+        }
+        finally
+        {
+            _isApplyingPersistedUiOptions = false;
+        }
+
+        SavePersistedUiOptions();
+    }
+
+    private void ReplayGainIncrementButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustTargetReplayGainVolume(ReplayGainNormalizationOptions.TargetReplayGainVolumeStepDb);
+    }
+
+    private void ReplayGainDecrementButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustTargetReplayGainVolume(-ReplayGainNormalizationOptions.TargetReplayGainVolumeStepDb);
+    }
+
+    private void AdjustTargetReplayGainVolume(double deltaDb)
+    {
+        var options = GetReplayGainNormalizationOptions();
+        var adjusted = options with
+        {
+            TargetReplayGainVolumeDb = options.TargetReplayGainVolumeDb + deltaDb,
+        };
+        TargetReplayGainVolumeTextBox.Text = adjusted.Normalize().TargetReplayGainVolumeDb
+            .ToString("0.0", CultureInfo.InvariantCulture);
+        TargetReplayGainVolumeTextBox.Focus();
+        TargetReplayGainVolumeTextBox.SelectAll();
+    }
+
     private void PersistedUiOption_Changed(object sender, RoutedEventArgs e)
     {
         SavePersistedUiOptions();
@@ -2342,13 +2410,26 @@ public partial class MainWindow : Window
         }
         else
         {
-            _log.Info($"Global Peak Boost: {(PeakBoostCheckBox.IsChecked == true ? "On" : "Off")}");
+            _log.Info($"Global audio normalization: {(PeakBoostCheckBox.IsChecked == true ? "On" : "Off")}");
             if (PeakBoostCheckBox.IsChecked == true)
             {
-                _log.Info($"Peak Boost target peak: {GetSelectedTargetPeakDb():0.0} dBFS");
+                var normalizationMode = GetSelectedAudioNormalizationMode();
+                _log.Info($"Audio normalization mode: {normalizationMode}");
+                if (normalizationMode == AudioNormalizationMode.Peak)
+                {
+                    _log.Info($"Peak Boost target peak: {GetSelectedTargetPeakDb():0.0} dBFS");
+                }
+                else
+                {
+                    var options = GetReplayGainNormalizationOptions();
+                    _log.Info($"ReplayGain target normalization: {options.TargetReplayGainVolumeDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+                    _log.Info($"ReplayGain peak limit: {options.PeakLimitDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS");
+                    _log.Info($"ReplayGain tolerance: {options.ToleranceDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+                    _log.Info($"ReplayGain maximum gain: {options.MaximumGainDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+                }
             }
 
-            _log.Info("Per-item Loudness Normalize overrides global Peak Boost.");
+            _log.Info("Per-item Loudness Normalize overrides global audio normalization.");
         }
 
         try
@@ -2647,10 +2728,22 @@ public partial class MainWindow : Window
                 : safeTitle;
             var destinationPath = _playlistResultService.ResolveCollisionSafePath(item, outputFolder, outputStem, extension);
             LogOutputConflictIfNeeded(outputFolder, outputStem, extension, destinationPath);
+            var copyOutputPath = _playlistResultService.CanReuseRecordedResultPath(item, destinationPath)
+                ? CreateReplacementTemporaryPath(destinationPath)
+                : destinationPath;
 
             _log.Info($"Copy Files output folder: {outputFolder}");
             _log.Info($"Copy source path: {sourcePath}");
-            await CopyFileWithProgressAsync(item, sourcePath, destinationPath);
+            try
+            {
+                await CopyFileWithProgressAsync(item, sourcePath, copyOutputPath);
+                ReplaceTrackedResultIfNeeded(copyOutputPath, destinationPath);
+            }
+            catch
+            {
+                DeleteReplacementTemporaryFile(copyOutputPath, destinationPath);
+                throw;
+            }
             item.ConvertedFilePath = destinationPath;
             RecordSuccessfulResult(item, destinationPath, outputOrder);
             ClearQueueProgress(item);
@@ -2978,8 +3071,10 @@ public partial class MainWindow : Window
             return;
         }
         LogOutputConflictIfNeeded(outputFolder, outputStem, outputExtension, outputFilePath);
+        var conversionOutputPath = _playlistResultService.CanReuseRecordedResultPath(item, outputFilePath)
+            ? CreateReplacementTemporaryPath(outputFilePath)
+            : outputFilePath;
 
-        SetQueueProgress(item, "変換中", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
         _log.Info($"Converting queue item {outputOrder:000}: {item.Title}");
         _log.Info($"Preset subfolder output enabled: {_settings.CreateSubfolderPerOutputPreset}");
         _log.Info($"Final converted output folder: {outputFolder}");
@@ -3002,10 +3097,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        SetQueueProgress(item, "変換中...", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
+
         var result = useAudioOutputPreset
             ? await _videoConversionService.ConvertAudioPresetAsync(
                 inputFilePath,
-                outputFilePath,
+                conversionOutputPath,
                 message => _log.Info(message),
                 preset,
                 audioFilter,
@@ -3014,14 +3111,14 @@ public partial class MainWindow : Window
             : isAudioOnlyInput
             ? await _videoConversionService.ConvertAudioOnlyMp4Async(
                 inputFilePath,
-                outputFilePath,
+                conversionOutputPath,
                 message => _log.Info(message),
                 audioFilter,
                 CreateQueueConversionProgressHandler(item),
                 cancellationToken)
             : await _videoConversionService.ConvertAsync(
                 inputFilePath,
-                outputFilePath,
+                conversionOutputPath,
                 message => _log.Info(message),
                 preset,
                 GetSelectedAspectMode(),
@@ -3031,6 +3128,7 @@ public partial class MainWindow : Window
 
         if (cancellationToken.IsCancellationRequested)
         {
+            DeleteReplacementTemporaryFile(conversionOutputPath, outputFilePath);
             ClearQueueProgress(item);
             item.Status = "Skipped";
             _log.Info($"Queue conversion canceled for {item.Order:000}: {item.Title}");
@@ -3039,15 +3137,28 @@ public partial class MainWindow : Window
 
         if (result.IsSuccess)
         {
-            item.ConvertedFilePath = result.OutputFilePath;
-            RecordSuccessfulResult(item, result.OutputFilePath, outputOrder);
+            try
+            {
+                ReplaceTrackedResultIfNeeded(conversionOutputPath, outputFilePath);
+            }
+            catch (Exception ex)
+            {
+                DeleteReplacementTemporaryFile(conversionOutputPath, outputFilePath);
+                ClearQueueProgress(item);
+                item.Status = "Failed";
+                _log.Error($"既存の処理結果を置き換えられませんでした: {ex.Message}");
+                return;
+            }
+            item.ConvertedFilePath = outputFilePath;
+            RecordSuccessfulResult(item, outputFilePath, outputOrder);
             SetQueueProgress(item, "100%", 100, string.Empty, string.Empty, string.Empty, isIndeterminate: false);
             ClearQueueProgress(item);
             item.Status = "Converted";
-            _log.Info($"Conversion output path: {result.OutputFilePath}");
+            _log.Info($"Conversion output path: {outputFilePath}");
             return;
         }
 
+        DeleteReplacementTemporaryFile(conversionOutputPath, outputFilePath);
         ClearQueueProgress(item);
         item.Status = "Failed";
         _log.Error($"Queue conversion failed for {item.Order:000}: {item.Title}");
@@ -3199,6 +3310,26 @@ public partial class MainWindow : Window
                     isIndeterminate: false);
             }
         }
+    }
+
+    private static string CreateReplacementTemporaryPath(string destinationPath)
+    {
+        var folder = Path.GetDirectoryName(destinationPath)!;
+        var stem = Path.GetFileNameWithoutExtension(destinationPath);
+        var extension = Path.GetExtension(destinationPath);
+        return Path.Combine(folder, $".{stem}.{Guid.NewGuid():N}.nmm-replace{extension}");
+    }
+
+    private static void ReplaceTrackedResultIfNeeded(string outputPath, string destinationPath)
+    {
+        if (string.Equals(outputPath, destinationPath, StringComparison.OrdinalIgnoreCase)) return;
+        File.Replace(outputPath, destinationPath, null);
+    }
+
+    private static void DeleteReplacementTemporaryFile(string outputPath, string destinationPath)
+    {
+        if (string.Equals(outputPath, destinationPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(outputPath)) return;
+        try { File.Delete(outputPath); } catch { }
     }
 
     private static string FormatBytes(long bytes)
@@ -3385,11 +3516,17 @@ public partial class MainWindow : Window
             SelectComboBoxItemByTag(AspectModeComboBox, _settings.AspectMode);
             KeepOriginalDownloadedFilesCheckBox.IsChecked = _settings.KeepOriginalDownloadedFiles;
             PeakBoostCheckBox.IsChecked = _settings.PeakBoost;
+            SelectComboBoxItemByTag(NormalizationModeComboBox, _settings.AudioNormalizationMode.ToString());
             SimpleModeCheckBox.IsChecked = _settings.SimpleModeEnabled;
             SelectComboBoxItemByContent(
                 TargetPeakComboBox,
                 $"{_settings.TargetPeakDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS",
                 "-1.0 dBFS");
+            ApplyReplayGainNormalizationOptionsToControls(new ReplayGainNormalizationOptions(
+                _settings.TargetReplayGainVolumeDb,
+                _settings.PeakLimitDb,
+                _settings.NormalizationToleranceDb,
+                _settings.MaximumNormalizationGainDb).Normalize());
             NumberPrefixTextBox.Text = string.Empty;
         }
         finally
@@ -3419,8 +3556,14 @@ public partial class MainWindow : Window
         _settings.AspectMode = GetSelectedAspectMode();
         _settings.KeepOriginalDownloadedFiles = KeepOriginalDownloadedFilesCheckBox.IsChecked == true;
         _settings.PeakBoost = PeakBoostCheckBox.IsChecked == true;
+        _settings.AudioNormalizationMode = GetSelectedAudioNormalizationMode();
         _settings.SimpleModeEnabled = SimpleModeCheckBox.IsChecked == true;
         _settings.TargetPeakDb = GetSelectedTargetPeakDb();
+        var replayGainOptions = GetReplayGainNormalizationOptions();
+        _settings.TargetReplayGainVolumeDb = replayGainOptions.TargetReplayGainVolumeDb;
+        _settings.PeakLimitDb = replayGainOptions.PeakLimitDb;
+        _settings.NormalizationToleranceDb = replayGainOptions.ToleranceDb;
+        _settings.MaximumNormalizationGainDb = replayGainOptions.MaximumGainDb;
         _settings.KnownOutputPresetIds = ConversionPresetCatalog.GetPresets().Select(static preset => preset.Id).ToList();
         SaveLastUsedLayoutState();
 
@@ -3639,6 +3782,44 @@ public partial class MainWindow : Window
             : -1.0;
     }
 
+    private AudioNormalizationMode GetSelectedAudioNormalizationMode()
+    {
+        var modeText = GetSelectedComboBoxTag(NormalizationModeComboBox);
+        return Enum.TryParse<AudioNormalizationMode>(modeText, ignoreCase: true, out var mode)
+            && Enum.IsDefined(mode)
+            ? mode
+            : AudioNormalizationMode.Peak;
+    }
+
+    private ReplayGainNormalizationOptions GetReplayGainNormalizationOptions()
+    {
+        return new ReplayGainNormalizationOptions(
+            ParseInvariantTextBoxValue(TargetReplayGainVolumeTextBox, _settings.TargetReplayGainVolumeDb),
+            ParseInvariantTextBoxValue(PeakLimitTextBox, _settings.PeakLimitDb),
+            ParseInvariantTextBoxValue(NormalizationToleranceTextBox, _settings.NormalizationToleranceDb),
+            ParseInvariantTextBoxValue(MaximumNormalizationGainTextBox, _settings.MaximumNormalizationGainDb))
+            .Normalize();
+    }
+
+    private static double ParseInvariantTextBoxValue(System.Windows.Controls.TextBox textBox, double fallback)
+    {
+        return double.TryParse(
+            textBox.Text.Trim(),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : fallback;
+    }
+
+    private void ApplyReplayGainNormalizationOptionsToControls(ReplayGainNormalizationOptions options)
+    {
+        TargetReplayGainVolumeTextBox.Text = options.TargetReplayGainVolumeDb.ToString("0.0", CultureInfo.InvariantCulture);
+        PeakLimitTextBox.Text = options.PeakLimitDb.ToString("0.0", CultureInfo.InvariantCulture);
+        NormalizationToleranceTextBox.Text = options.ToleranceDb.ToString("0.0", CultureInfo.InvariantCulture);
+        MaximumNormalizationGainTextBox.Text = options.MaximumGainDb.ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
     private async Task<string?> BuildAudioFilterAsync(
         ConversionQueueItem item,
         string inputFilePath,
@@ -3647,11 +3828,17 @@ public partial class MainWindow : Window
         _log.Info($"Audio adjustment for {item.Title}: {GetAudioAdjustmentDisplay(item.AudioAdjustmentMode)}");
         switch (item.AudioAdjustmentMode)
         {
-            case AudioAdjustmentMode.LoudnessNormalize:
-                _log.Info($"Peak Boost skipped for {item.Title}: per-item Loudness Normalize is selected.");
+            case AudioAdjustmentMode.LoudnessNormalize when AudioNormalizationPolicy.PerItemOverridesGlobal(item.AudioAdjustmentMode):
+                _log.Info("項目別の音量ノーマライズが有効なため、グローバルの音量正規化は適用しません。");
                 _log.Info("Audio adjustment filter: loudnorm=I=-16:LRA=11:TP=-1.5");
                 return "loudnorm=I=-16:LRA=11:TP=-1.5";
             case AudioAdjustmentMode.Off when PeakBoostCheckBox.IsChecked == true:
+                if (GetSelectedAudioNormalizationMode() == AudioNormalizationMode.ReplayGain)
+                {
+                    _log.Info($"Global ReplayGain normalization applies to {item.Title}.");
+                    return await BuildReplayGainNormalizationFilterAsync(item, inputFilePath, cancellationToken);
+                }
+
                 _log.Info($"Global Peak Boost applies to {item.Title}.");
                 return await BuildPeakNormalizeBoostOnlyFilterAsync(inputFilePath, cancellationToken);
             default:
@@ -3698,10 +3885,78 @@ public partial class MainWindow : Window
             return string.Empty;
         }
 
-        var gainText = gainDb.ToString("0.###", CultureInfo.InvariantCulture);
-        var filter = $"volume={gainText}dB,alimiter=limit=0.98";
+        var filter = PeakNormalizationFilterBuilder.BuildBoostOnly(maxVolumeDb, targetPeakDb);
         _log.Info($"Audio boost applied: {filter}");
         return filter;
+    }
+
+    private async Task<string?> BuildReplayGainNormalizationFilterAsync(
+        ConversionQueueItem item,
+        string inputFilePath,
+        CancellationToken cancellationToken)
+    {
+        var options = GetReplayGainNormalizationOptions();
+        SetQueueProgress(item, "音量を解析中...", null, string.Empty, string.Empty, string.Empty, isIndeterminate: true);
+        _log.Info("音量を解析中...");
+
+        var preparation = await _replayGainNormalizationService.PrepareAsync(
+            token => _videoConversionService.AnalyzeReplayGainAsync(
+                inputFilePath,
+                message => _log.Info(message),
+                token),
+            options,
+            cancellationToken);
+
+        if (preparation.Status == ReplayGainPreparationStatus.Canceled)
+        {
+            _log.Info("音量解析をキャンセルしました。");
+            return null;
+        }
+
+        if (preparation.Status == ReplayGainPreparationStatus.AnalysisFailed)
+        {
+            var analysisResult = preparation.AnalysisResult;
+            _log.Warn($"ReplayGainを解析できなかったため、正規化なしで変換を続行します。終了コード: {analysisResult?.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "不明"}");
+            if (analysisResult is not null)
+            {
+                LogProcessOutput(analysisResult.StandardError, "ffmpeg replaygain stderr");
+                LogProcessOutput(analysisResult.StandardOutput, "ffmpeg replaygain stdout");
+            }
+
+            return string.Empty;
+        }
+
+        var analysis = preparation.AnalysisResult!.Analysis!;
+        var decision = preparation.Decision!;
+        _log.Info("音量を解析しました。");
+        _log.Info($"トラック音量: {decision.DetectedTrackVolumeDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+        _log.Info($"ReplayGain: {FormatSignedDb(analysis.TrackGainDb)} dB");
+        _log.Info($"正規化設定: {options.TargetReplayGainVolumeDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+        _log.Info($"要求ゲイン: {FormatSignedDb(decision.RequestedGainDb)} dB");
+        _log.Info($"トラックピーク: {analysis.TrackPeak.ToString("0.000000", CultureInfo.InvariantCulture)}");
+
+        if (decision.Action == ReplayGainNormalizationAction.Skip)
+        {
+            _log.Info($"判定: {decision.Reason}");
+            return string.Empty;
+        }
+
+        _log.Info($"適用ゲイン: {FormatSignedDb(decision.AppliedGainDb)} dB");
+        if (decision.GainWasLimited)
+        {
+            _log.Info($"判定: 最大増幅量または安全な最大減衰量によってゲインを制限しました。上限: +{options.MaximumGainDb.ToString("0.0", CultureInfo.InvariantCulture)} dB / 下限: -{ReplayGainNormalizationOptions.MaximumAttenuationDb.ToString("0.0", CultureInfo.InvariantCulture)} dB");
+        }
+
+        _log.Info($"予測ピーク: {FormatSignedDb(decision.PredictedPeakDb)} dBFS");
+        _log.Info($"ピーク上限: {options.PeakLimitDb.ToString("0.0", CultureInfo.InvariantCulture)} dBFS");
+        _log.Info($"判定: {decision.Reason}");
+        _log.Info($"Audio adjustment filter: {decision.AudioFilter}");
+        return decision.AudioFilter;
+    }
+
+    private static string FormatSignedDb(double value)
+    {
+        return value.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
     }
 
     private void UpdateAspectModeSelector()
@@ -3718,14 +3973,25 @@ public partial class MainWindow : Window
 
     private void UpdateAudioAdjustmentControls()
     {
-        if (AudioAdjustmentComboBox is null || TargetPeakComboBox is null || TargetPeakLabel is null)
+        if (AudioAdjustmentComboBox is null
+            || TargetPeakComboBox is null
+            || TargetPeakLabel is null
+            || NormalizationModeComboBox is null
+            || ReplayGainOptionsPanel is null)
         {
             return;
         }
 
-        var isPeakMode = PeakBoostCheckBox.IsChecked == true;
-        TargetPeakLabel.IsEnabled = isPeakMode;
-        TargetPeakComboBox.IsEnabled = isPeakMode;
+        var controlsAvailable = PeakBoostCheckBox.IsEnabled;
+        var normalizationEnabled = controlsAvailable && PeakBoostCheckBox.IsChecked == true;
+        var isPeakMode = GetSelectedAudioNormalizationMode() == AudioNormalizationMode.Peak;
+        NormalizationModeComboBox.IsEnabled = controlsAvailable;
+        TargetPeakLabel.Visibility = isPeakMode ? Visibility.Visible : Visibility.Collapsed;
+        TargetPeakComboBox.Visibility = isPeakMode ? Visibility.Visible : Visibility.Collapsed;
+        TargetPeakLabel.IsEnabled = normalizationEnabled;
+        TargetPeakComboBox.IsEnabled = normalizationEnabled;
+        ReplayGainOptionsPanel.Visibility = isPeakMode ? Visibility.Collapsed : Visibility.Visible;
+        ReplayGainOptionsPanel.IsEnabled = normalizationEnabled;
     }
 
     private static string GetAudioAdjustmentDisplay(AudioAdjustmentMode mode)
@@ -3817,7 +4083,9 @@ public partial class MainWindow : Window
         var desiredPath = PathHelper.BuildFilePath(folder, desiredStem, extension);
         if (!string.Equals(desiredPath, selectedPath, StringComparison.OrdinalIgnoreCase))
         {
-            _log.Info($"Output already exists. Using: {selectedPath}");
+            _log.Info("出力先に同名の管理外ファイルまたは別項目の成果物が存在するため、衝突回避名を使用します。");
+            _log.Info($"元の候補: {Path.GetFileName(desiredPath)}");
+            _log.Info($"出力名: {Path.GetFileName(selectedPath)}");
         }
     }
 
@@ -4170,8 +4438,7 @@ public partial class MainWindow : Window
         PeakBoostCheckBox.IsEnabled = !isDownloading;
         AudioAdjustmentComboBox.IsEnabled = !isDownloading;
         ApplyAudioAdjustmentButton.IsEnabled = !isDownloading;
-        TargetPeakLabel.IsEnabled = !isDownloading && PeakBoostCheckBox.IsChecked == true;
-        TargetPeakComboBox.IsEnabled = !isDownloading && PeakBoostCheckBox.IsChecked == true;
+        UpdateAudioAdjustmentControls();
         QueueMoveUpButton.IsEnabled = !isDownloading;
         QueueMoveDownButton.IsEnabled = !isDownloading;
         QueueRemoveButton.IsEnabled = !isDownloading;
@@ -4220,8 +4487,7 @@ public partial class MainWindow : Window
         PeakBoostCheckBox.IsEnabled = !isConverting;
         AudioAdjustmentComboBox.IsEnabled = !isConverting;
         ApplyAudioAdjustmentButton.IsEnabled = !isConverting;
-        TargetPeakLabel.IsEnabled = !isConverting && PeakBoostCheckBox.IsChecked == true;
-        TargetPeakComboBox.IsEnabled = !isConverting && PeakBoostCheckBox.IsChecked == true;
+        UpdateAudioAdjustmentControls();
         QueueMoveUpButton.IsEnabled = !isConverting;
         QueueMoveDownButton.IsEnabled = !isConverting;
         QueueRemoveButton.IsEnabled = !isConverting;
@@ -4263,8 +4529,7 @@ public partial class MainWindow : Window
         PeakBoostCheckBox.IsEnabled = !isConverting;
         AudioAdjustmentComboBox.IsEnabled = !isConverting;
         ApplyAudioAdjustmentButton.IsEnabled = !isConverting;
-        TargetPeakLabel.IsEnabled = !isConverting && PeakBoostCheckBox.IsChecked == true;
-        TargetPeakComboBox.IsEnabled = !isConverting && PeakBoostCheckBox.IsChecked == true;
+        UpdateAudioAdjustmentControls();
         RetryFailedQueueButton.IsEnabled = !isConverting;
         CancelQueueButton.IsEnabled = isConverting;
         SimpleCancelQueueButton.IsEnabled = isConverting;

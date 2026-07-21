@@ -546,13 +546,25 @@
                                Grid.Row="1"
                                Margin="0,0,0,8">
                         <CheckBox x:Name="PeakBoostCheckBox"
-                                  Content="音量持ち上げ"
-                                  ToolTip="音量ピークが低いファイルだけ、目標ピークまで自動で持ち上げます。すでに大きい音源は下げません。"
+                                  Content="音声ゲイン正規化"
+                                  ToolTip="ピーク音量またはReplayGainを基準に音声ゲインを正規化します。"
                                   IsChecked="False"
                                   VerticalAlignment="Center"
                                   Margin="0,0,12,8"
                                   Checked="PeakBoostCheckBox_CheckedChanged"
                                   Unchecked="PeakBoostCheckBox_CheckedChanged" />
+                        <TextBlock Text="正規化方式"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,8" />
+                        <ComboBox x:Name="NormalizationModeComboBox"
+                                  MinWidth="150"
+                                  MinHeight="30"
+                                  Margin="0,0,12,8"
+                                  SelectedIndex="0"
+                                  SelectionChanged="NormalizationModeComboBox_SelectionChanged">
+                            <ComboBoxItem Content="ピーク音量" Tag="Peak" />
+                            <ComboBoxItem Content="音量の正規化（dB）" Tag="ReplayGain" />
+                        </ComboBox>
                         <TextBlock Text="音声補正"
                                    ToolTip="選択中のキュー項目に、音量ノーマライズなどの音声補正を設定します。"
                                    VerticalAlignment="Center"
@@ -590,6 +602,77 @@
                             <ComboBoxItem Content="-3.0 dBFS" />
                             <ComboBoxItem Content="-6.0 dBFS" />
                         </ComboBox>
+                        <WrapPanel x:Name="ReplayGainOptionsPanel">
+                            <TextBlock Text="正規化（dB）"
+                                       ToolTip="89.0 dBを基準として音量を正規化します。数値を大きくすると出力音量が大きくなり、大きな値ではピークリミッターが強く作用する場合があります。"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,8" />
+                            <TextBox x:Name="TargetReplayGainVolumeTextBox"
+                                     Text="89.0"
+                                     ToolTip="80.0～105.0 dB。キーボード入力または上下ボタンで0.1ずつ変更できます。"
+                                     Width="64"
+                                     MinHeight="30"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,4,8"
+                                     TextChanged="NormalizationValueTextBox_TextChanged"
+                                     LostFocus="NormalizationValueTextBox_LostFocus" />
+                            <Button x:Name="ReplayGainIncrementButton"
+                                    Content="▲"
+                                    ToolTip="0.1 dB上げる"
+                                    Width="26"
+                                    MinHeight="30"
+                                    Margin="0,0,2,8"
+                                    Click="ReplayGainIncrementButton_Click" />
+                            <Button x:Name="ReplayGainDecrementButton"
+                                    Content="▼"
+                                    ToolTip="0.1 dB下げる"
+                                    Width="26"
+                                    MinHeight="30"
+                                    Margin="0,0,12,8"
+                                    Click="ReplayGainDecrementButton_Click" />
+                            <TextBlock Text="ピーク上限"
+                                       ToolTip="リミッターのピーク上限（-12.0～-0.1 dBFS）です。"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,8" />
+                            <TextBox x:Name="PeakLimitTextBox"
+                                     Text="-1.0"
+                                     ToolTip="-12.0～-0.1 dBFS"
+                                     Width="64"
+                                     MinHeight="30"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,4,8"
+                                     TextChanged="NormalizationValueTextBox_TextChanged"
+                                     LostFocus="NormalizationValueTextBox_LostFocus" />
+                            <TextBlock Text="dBFS" VerticalAlignment="Center" Margin="0,0,12,8" />
+                            <TextBlock Text="許容差"
+                                       ToolTip="正規化を省略する差（0.0～3.0 dB）です。"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,8" />
+                            <TextBox x:Name="NormalizationToleranceTextBox"
+                                     Text="0.5"
+                                     ToolTip="0.0～3.0 dB"
+                                     Width="56"
+                                     MinHeight="30"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,4,8"
+                                     TextChanged="NormalizationValueTextBox_TextChanged"
+                                     LostFocus="NormalizationValueTextBox_LostFocus" />
+                            <TextBlock Text="dB" VerticalAlignment="Center" Margin="0,0,12,8" />
+                            <TextBlock Text="最大増幅量"
+                                       ToolTip="正方向へ適用する最大ゲイン（0.0～30.0 dB）です。"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,8" />
+                            <TextBox x:Name="MaximumNormalizationGainTextBox"
+                                     Text="20.0"
+                                     ToolTip="0.0～30.0 dB"
+                                     Width="56"
+                                     MinHeight="30"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,4,8"
+                                     TextChanged="NormalizationValueTextBox_TextChanged"
+                                     LostFocus="NormalizationValueTextBox_LostFocus" />
+                            <TextBlock Text="dB" VerticalAlignment="Center" Margin="0,0,12,8" />
+                        </WrapPanel>
                     </WrapPanel>
 
                     <WrapPanel x:Name="NormalQueueActionsPanel"
