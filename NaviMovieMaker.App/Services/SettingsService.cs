@@ -96,8 +96,13 @@ public sealed class SettingsService
             AspectMode = "Keep aspect ratio + padding",
             KeepOriginalDownloadedFiles = false,
             PeakBoost = false,
+            AudioNormalizationMode = AudioNormalizationMode.Peak,
             SimpleModeEnabled = false,
             TargetPeakDb = -1.0,
+            TargetReplayGainVolumeDb = ReplayGainNormalizationOptions.ReplayGainReferenceVolumeDb,
+            PeakLimitDb = -1.0,
+            NormalizationToleranceDb = 0.5,
+            MaximumNormalizationGainDb = 20.0,
             StartupLayout = "QueueFocus",
             LastCandidatesExpanded = false,
             LastLogExpanded = false,
@@ -219,6 +224,29 @@ public sealed class SettingsService
         if (!knownTargetPeaks.Contains(settings.TargetPeakDb))
         {
             settings.TargetPeakDb = -1.0;
+            changed = true;
+        }
+
+        if (!Enum.IsDefined(settings.AudioNormalizationMode))
+        {
+            settings.AudioNormalizationMode = AudioNormalizationMode.Peak;
+            changed = true;
+        }
+
+        var normalizedReplayGainOptions = new ReplayGainNormalizationOptions(
+            settings.TargetReplayGainVolumeDb,
+            settings.PeakLimitDb,
+            settings.NormalizationToleranceDb,
+            settings.MaximumNormalizationGainDb).Normalize();
+        if (settings.TargetReplayGainVolumeDb != normalizedReplayGainOptions.TargetReplayGainVolumeDb
+            || settings.PeakLimitDb != normalizedReplayGainOptions.PeakLimitDb
+            || settings.NormalizationToleranceDb != normalizedReplayGainOptions.ToleranceDb
+            || settings.MaximumNormalizationGainDb != normalizedReplayGainOptions.MaximumGainDb)
+        {
+            settings.TargetReplayGainVolumeDb = normalizedReplayGainOptions.TargetReplayGainVolumeDb;
+            settings.PeakLimitDb = normalizedReplayGainOptions.PeakLimitDb;
+            settings.NormalizationToleranceDb = normalizedReplayGainOptions.ToleranceDb;
+            settings.MaximumNormalizationGainDb = normalizedReplayGainOptions.MaximumGainDb;
             changed = true;
         }
 
