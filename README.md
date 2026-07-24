@@ -16,6 +16,10 @@ Playlist shortcuts follow standard document editing: `Ctrl+N` creates a new play
 
 Each playlist retains its own selected output folder, so reusable jobs can target different destinations independently.
 
+Audio gain normalization can use either the existing peak-based mode or the new ReplayGain-based `Volume normalization (dB)` mode. The ReplayGain mode uses an XMedia Recode-like 89.0 dB reference, accepts 80.0–105.0 dB in 0.1 steps, applies peak limiting when needed, works in both normal and Simple Mode, and continues conversion without normalization if analysis fails. Per-item loudnorm settings take priority, and FFmpeg results may not exactly match XMedia Recode.
+
 Playlist items persist stable row IDs and verified successful-result metadata. The Result column distinguishes available, missing, modified, out-of-sequence, conflicting, and reprocessing states. Valid existing results are skipped on subsequent processing runs, while unknown files are never claimed or overwritten. Numbered tracked results can have only their sequence prefixes synchronized after reordering.
+
+Normal outputs now use natural names such as `Video title.mp4` or `001_Video title.mp4`. A stable collision identifier is added only when the basic name actually conflicts with an unmanaged file or another source result. Existing files are not overwritten, and previously tracked identifier-suffixed results remain valid.
 
 Playlist preview uses the separate third-party [mpv](https://mpv.io/) application; it is not bundled, and NaviMovie-Maker does not embed a media player. Select `mpv.exe` under Tools > Settings > External Tools. `Ctrl+P` plays all verified results when every playable item has one; otherwise it plays the original local files and URLs supported by mpv/yt-dlp in queue order without mixing sources and results.
